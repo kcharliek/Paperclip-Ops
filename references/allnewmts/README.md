@@ -19,10 +19,10 @@
 ```text
 Board
 └── Strategy Agent (CEO)
-    └── Manager (PM)
-        ├── Builder (Engineer)
-        ├── Researcher (Researcher)
-        └── Tech Manager (CTO)
+    ├── PM
+    │   └── Researcher
+    └── TPM (Development Lead)
+        └── Builder
 ```
 
 Board는 Agent 생성, environment 관리, join 승인, Skill 생성, Task 배정, 사용자 초대와 권한 관리 권한을 가진다. Agent별 상세 책임과 권한은 [roles](roles/README.md)에 있다.
@@ -55,7 +55,7 @@ Company Goal은 **iOS/Android 기반 SmartFormDe 시스템을 React Native Expo 
 
 별도 Task-level Goal **AI가 유지보수할 수 있는 시스템 구성**은 planned 상태다.
 
-활성 Project는 `MTS Migration`이며 Manager가 lead다. `Onboarding` Project는 completed/archived 상태다.
+활성 Project는 `MTS Migration`이며 PM이 lead다. `Onboarding` Project는 completed/archived 상태다.
 
 ## Runtime과 Workspace
 
@@ -69,17 +69,17 @@ Company Goal은 **iOS/Android 기반 SmartFormDe 시스템을 React Native Expo 
 | 실행 mode | shared workspace |
 | 원본 | `/Users/chanheekim/Dev/Plus`, `/Users/chanheekim/Dev/mts_screen` 읽기 전용 |
 
-Strategy Agent, Manager, Builder, Researcher는 on-demand heartbeat와 `maxConcurrentRuns: 1`을 사용한다. Tech Manager는 heartbeat 예약 없이 `maxConcurrentRuns: 20`으로 설정되어 있다.
+모든 Agent는 on-demand heartbeat와 `maxConcurrentRuns: 1`을 사용한다.
 
 ## Delivery 규칙
 
 - 인간 요청은 Strategy Agent가 최초 접수해 기존 또는 신규 Team Goal Milestone에 정렬한다.
-- Strategy Agent는 실행 handoff Task만 Manager에게 배정한다.
-- 신규 실행 Task는 Manager가 최초 접수한다.
-- 구현과 테스트는 Builder, 원본 조사와 스펙은 Researcher에게 배정한다.
+- Strategy Agent는 범위·조사 handoff를 PM, 기술 handoff를 TPM에게 배정한다.
+- PM은 Researcher, TPM은 Builder만 직접 지휘한다.
+- PM과 TPM은 같은 레이어에서 peer handoff Task로 협업한다.
 - 한 Agent에는 실행 가능한 Task 하나만 둔다.
 - 큰 Task는 2~5개 child로 분해한다.
-- Builder/Researcher Root Task는 Manager review를 거친다.
+- Researcher Root는 PM, Builder Root는 TPM review를 거친다.
 - Strategy Agent는 Team Goal을 Milestone으로 관리하고 한 번에 하나만 active로 유지한다.
 
 ## Operations
@@ -89,7 +89,7 @@ Strategy Agent, Manager, Builder, Researcher는 on-demand heartbeat와 `maxConcu
 | Routine | 없음 |
 | Pipeline | 없음 |
 | Operation Control | `local.operation-control` 0.1.0, ready/healthy |
-| 기본 Maintenance owner | Tech Manager |
+| 기본 Maintenance owner | TPM |
 | 기본 stop policy | drain |
 
 Maintenance 상태 설계는 [운영 설계](../../docs/architecture.md)에 있다.

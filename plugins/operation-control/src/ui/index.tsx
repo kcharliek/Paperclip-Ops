@@ -41,7 +41,7 @@ export function OperationControlWidget({ context }: PluginWidgetProps) {
   useEffect(() => {
     if (!data) return;
     const preferred = data.state.ownerAgentId
-      ?? data.agents.find((agent) => /tech manager/i.test(`${agent.name} ${agent.title ?? ""}`))?.id
+      ?? data.agents.find((agent) => /\b(?:tpm|tech(?:nical)? project manager|tech manager)\b/i.test(`${agent.name} ${agent.title ?? ""}`))?.id
       ?? data.agents.find((agent) => agent.status !== "terminated")?.id
       ?? "";
     setOwnerAgentId(preferred);
