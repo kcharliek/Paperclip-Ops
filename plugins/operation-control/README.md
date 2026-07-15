@@ -4,7 +4,7 @@ Company-wide maintenance control without forking Paperclip.
 
 - `Finish current work, then pause` leaves runs that were already active alone. New runs observed after the hold flag are cancelled, and each existing agent is paused after its last run finishes.
 - `Pause now` pauses every non-owner agent immediately, cancelling active runs.
-- The maintenance owner remains available in both modes.
+- The Maintainer is the default maintenance owner and remains available in both modes.
 - Returning to normal resumes only agents paused by this plugin.
 - State is stored per company and mirrored to a `Company Operation State` issue document Artifact.
 

@@ -1,6 +1,6 @@
 # AllNewMTS Reference
 
-이 문서는 [범용 AI Company Blueprint](../../blueprint/README.md)의 기반이 된 실제 사례다. `http://127.0.0.1:3100`의 AllNewMTS Company를 2026-07-15에 확인한 현재값이며 범용 기본값이 아니다.
+이 문서는 [범용 AI Company Blueprint](../../blueprint/README.md)를 Paperclip `2026.707.0` 제약에 맞춰 적용한 실제 스냅샷이다. `http://127.0.0.1:3100`의 AllNewMTS Company를 2026-07-15에 API로 다시 확인한 현재값이며, 목표 표준 자체는 아니다.
 
 ## Company Charter
 
@@ -18,29 +18,32 @@
 
 ```text
 Board
-└── Strategy Agent (CEO)
-    ├── PM
-    │   └── Researcher
-    └── TPM (Development Lead)
-        └── Builder
+└── Product Steward (ceo)
+    ├── Prototyper (researcher)
+    ├── Builder (engineer)
+    ├── Sweeper (qa)
+    ├── Grower (pm)
+    └── Maintainer (devops)
 ```
 
-Board는 Agent 생성, environment 관리, join 승인, Skill 생성, Task 배정, 사용자 초대와 권한 관리 권한을 가진다. Agent별 상세 책임과 권한은 [roles](roles/README.md)에 있다.
+Paperclip은 임의 Role 값을 허용하지 않으므로 괄호 안의 내장 enum을 사용하고 실제 역할은 Agent 이름, title, capabilities, instructions와 Task label로 표현한다. 현재 각 역할은 한 명이지만 표준은 역할별 `1..N` Agent를 허용한다.
 
-각 Agent의 월 예산은 2,000 cents이며 80%에서 경고하고 초과 시 hard stop한다. 현재 terminated 상태인 이전 Manager의 budget policy도 활성 상태로 남아 있다.
+Product Steward만 Task 배정, Agent 생성 요청과 Skill 생성 권한을 갖는다. 새 Agent는 이 권한과 별개로 Board approval을 통과해야 한다. 다섯 delivery role은 다른 Agent에게 Task를 배정하지 않는다. 상세 책임과 실제 instruction 원문은 [roles](roles/README.md)에 있다.
+
+각 Agent의 월 예산은 2,000 cents이며 모든 heartbeat는 on-demand, `maxConcurrentRuns: 1`이다.
 
 ## Company Skill
 
 | 종류 | Skill | Agent 연결 |
 |---|---|---:|
-| 회사 고유 | [formde-migration](skills/formde-migration/SKILL.md) | 5 |
+| 회사 고유 | [formde-migration](skills/formde-migration/SKILL.md) | 6 |
 | Paperclip 기본 | paperclip | 0 |
 | Paperclip 기본 | paperclip-board | 0 |
 | Paperclip 기본 | paperclip-converting-plans-to-tasks | 0 |
 | Paperclip 기본 | paperclip-create-agent | 0 |
 | Paperclip 기본 | para-memory-files | 0 |
 
-다섯 Agent의 adapter에는 `formde-migration`이 desired skill로 설정되어 있다. 기본 제공 Skill은 Company catalog에는 존재하지만 Agent에 직접 attach되어 있지 않다.
+여섯 Agent의 adapter에는 `formde-migration`이 desired skill로 설정되어 있다. 기본 제공 Skill은 Company catalog에는 존재하지만 Agent에 직접 attach되어 있지 않다.
 
 ## Goal과 Project
 
@@ -48,39 +51,39 @@ Company Goal은 **iOS/Android 기반 SmartFormDe 시스템을 React Native Expo 
 
 | Team Goal Milestone | 상태 | owner |
 |---|---|---|
-| 개발 기반과 FormDe 호환성 계약 확보 | active | Strategy Agent |
-| 대표 XMS E2E 호환 입증 | planned | Strategy Agent |
-| XMS 런타임 v1 완성 | planned | Strategy Agent |
-| 운영 화면 호환성 확대와 FormDe Cutover | planned | Strategy Agent |
+| 개발 기반과 FormDe 호환성 계약 확보 | active | Product Steward |
+| 대표 XMS E2E 호환 입증 | planned | Product Steward |
+| XMS 런타임 v1 완성 | planned | Product Steward |
+| 운영 화면 호환성 확대와 FormDe Cutover | planned | Product Steward |
 
 별도 Task-level Goal **AI가 유지보수할 수 있는 시스템 구성**은 planned 상태다.
 
-활성 Project는 `MTS Migration`이며 PM이 lead다. `Onboarding` Project는 completed/archived 상태다.
+활성 Project는 `MTS Migration`이며 Product Steward가 lead다. 현재 Goal 전환 Task `ALL-25`는 선행 Task가 끝날 때까지 blocked이고, 완료 뒤 `local-board` approval stage를 통과해야 한다.
 
 ## Runtime과 Workspace
 
 | 항목 | 현재값 |
 |---|---|
 | Environment | Local, active, instance default |
-| Adapter | 모든 Agent `codex_local` |
-| Model | 모든 Agent `gpt-5.5` |
+| Adapter / Model | 모든 Agent `codex_local` / `gpt-5.5` |
 | 검색 | false |
 | 제품 workspace | `/Users/chanheekim/Dev/AllNewMTS` |
-| 실행 mode | shared workspace |
+| 기본 실행 mode | shared workspace |
+| Issue override | 허용 |
 | 원본 | `/Users/chanheekim/Dev/Plus`, `/Users/chanheekim/Dev/mts_screen` 읽기 전용 |
 
-모든 Agent는 on-demand heartbeat와 `maxConcurrentRuns: 1`을 사용한다.
+shared workspace writer는 동시에 한 명만 허용한다. isolated workspace override는 설정상 허용되지만 AllNewMTS에 Git `HEAD`가 아직 없어 현재 실행할 수 없다. 이 기간의 Prototyper는 Issue Document, attachment 또는 work product만 만든다.
 
 ## Delivery 규칙
 
-- 인간 요청은 Strategy Agent가 최초 접수해 기존 또는 신규 Team Goal Milestone에 정렬한다.
-- Strategy Agent는 범위·조사 handoff를 PM, 기술 handoff를 TPM에게 배정한다.
-- PM은 Researcher, TPM은 Builder만 직접 지휘한다.
-- PM과 TPM은 같은 레이어에서 peer handoff Task로 협업한다.
-- 한 Agent에는 실행 가능한 Task 하나만 둔다.
-- 큰 Task는 2~5개 child로 분해한다.
-- Researcher Root는 PM, Builder Root는 TPM review를 거친다.
-- Strategy Agent는 Team Goal을 Milestone으로 관리하고 한 번에 하나만 active로 유지한다.
+- Task에는 `role:prototyper`, `role:builder`, `role:sweeper`, `role:grower`, `role:maintainer` 중 정확히 하나를 붙인다.
+- Product Steward가 Goal, blocker와 delivery contract를 확인해 해당 역할 Agent 한 명에게 배정한다.
+- Prototyper backlog는 Product Steward review, Builder backlog는 Sweeper review를 거친다.
+- Goal·고위험 전환은 Board approval stage를 추가한다.
+- Prototyper 결과는 keep 또는 kill하며 keep된 결과만 Builder로 넘긴다.
+- shared workspace의 제품 writer는 한 번에 한 명이다.
+
+범용 상태 전이와 Task contract는 [Delivery Lifecycle](../../blueprint/delivery-lifecycle.md)에 정의한다.
 
 ## Operations
 
@@ -89,11 +92,11 @@ Company Goal은 **iOS/Android 기반 SmartFormDe 시스템을 React Native Expo 
 | Routine | 없음 |
 | Pipeline | 없음 |
 | Operation Control | `local.operation-control` 0.1.0, ready/healthy |
-| 기본 Maintenance owner | TPM |
+| Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
 
-Maintenance 상태 설계는 [운영 설계](../../docs/architecture.md)에 있다.
+Operation Control은 Paperclip Agent 한 명만 owner로 유지할 수 있다. Maintenance 중 Maintainer가 사전 승인된 변경과 최소 검증을 수행하고, `normal` 복귀 후 Builder 또는 Sweeper가 독립 검토한다.
 
 ## 재현 범위
 
-현재 문서와 Role/Skill 원문은 범용 설계를 검증하는 근거다. AllNewMTS에서 발견된 차이는 [drift](drift.md)에 기록한다.
+현재 문서와 Role/Skill 원문은 적용 결과의 근거다. 아직 남은 차이는 [drift](drift.md)에 기록한다.

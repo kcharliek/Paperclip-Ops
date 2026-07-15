@@ -8,7 +8,7 @@
 AI Company Blueprint
 ├── Charter: 목적과 완료 조건
 ├── Governance: Board, 승인, 예산
-├── Organization: Board, Strategy Agent, PM, TPM, 실행 Role, 보고선, 권한
+├── Organization: Board, Product Steward, 5개 실행 Role, 보고선, 권한
 ├── Knowledge: Company Skill
 ├── Delivery: Company Goal, Team Goal Milestone, Project, Task, review
 ├── Runtime: model, environment, workspace, concurrency
@@ -20,7 +20,7 @@ AI Company Blueprint
 | Blueprint가 정한다 | Company Profile이 채운다 |
 |---|---|
 | Role의 책임 경계와 권한 원칙 | 회사 목적, 이름, issue prefix |
-| Task 배정과 review 흐름 | 제품 workspace와 읽기 전용 근거 |
+| Task label, Gate, 배정과 review 흐름 | Agent 이름과 수, 제품 workspace와 읽기 전용 근거 |
 | Company Skill의 구조 | 도메인 계약과 완료 조건 |
 | `normal → holding → maintenance` 상태 모델 | Maintenance owner와 정지 정책 |
 | shared workspace 동시성 원칙 | model, 예산, timeout |

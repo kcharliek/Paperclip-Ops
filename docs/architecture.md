@@ -4,7 +4,7 @@
 
 ## 목적
 
-평상시 개발 흐름과 기술 부채 정리 시간을 분리한다. 유지보수 전환 시 신규 Agent 실행은 멈추되 이미 실행 중인 작업은 정책에 따라 완료하거나 즉시 취소할 수 있어야 한다. Maintenance owner는 정지 기간에도 Task 조정, Agent 관리, 코드 개선과 검증을 수행한다.
+평상시 개발 흐름과 기술 부채 정리 시간을 분리한다. 유지보수 전환 시 신규 Agent 실행은 멈추되 이미 실행 중인 작업은 정책에 따라 완료하거나 즉시 취소할 수 있어야 한다. Maintainer는 기본 Maintenance owner로서 정지 기간에 사전 승인된 코드 개선과 검증을 수행한다.
 
 ## 경계
 
@@ -28,7 +28,7 @@ NORMAL ── Start maintenance ──> HOLDING ── drain 완료 ──> MAIN
 |---|---|
 | `normal` | 모든 Agent가 기존 정책대로 실행된다. |
 | `holding` | 신규 일반 Agent 실행을 정지시키고 기존 실행의 종료를 기다린다. |
-| `maintenance` | Maintenance owner만 실행할 수 있고 나머지 Agent는 paused 상태다. |
+| `maintenance` | Maintainer로 선택된 Maintenance owner 한 명만 실행할 수 있고 나머지 Agent는 paused 상태다. |
 
 Company 운영 상태는 company-scoped plugin state에 저장한다. 첫 Maintenance 시작 시 `Company Operation State` Task와 `operation-state` Issue Document를 만들어 같은 상태를 Artifact로 미러링한다.
 
@@ -59,10 +59,12 @@ Company 운영 상태는 company-scoped plugin state에 저장한다. 첫 Mainte
 - 제품 저장소와 PaperClip-Ops 저장소를 섞지 않는다.
 - Artifact 동기화가 실패해도 운영 상태는 plugin state에 유지한다.
 - Maintenance 시작은 명시적인 UI 동작으로만 수행한다.
+- Maintenance Task와 완료 조건은 `normal` 상태에서 Product Steward가 먼저 확정한다.
+- Maintainer가 변경과 최소 검증을 완료하고 `normal` 복귀 뒤 Builder 또는 Sweeper가 독립 review한다.
 
 ## 현재 한계
 
-Plugin SDK에는 동기식 `beforeAgentRun` veto hook이 없다. 따라서 신규 run이 프로세스 수준에서 아주 짧게 시작된 뒤 `agent.run.started` 이벤트로 취소될 수 있다. Paperclip Core를 포크하지 않는 조건에서 의도적으로 수용한 한계다.
+Plugin SDK에는 동기식 `beforeAgentRun` veto hook이 없다. 따라서 신규 run이 프로세스 수준에서 아주 짧게 시작된 뒤 `agent.run.started` 이벤트로 취소될 수 있다. 또한 현재 플러그인은 Maintenance participant 목록이 아닌 owner 한 명만 허용한다. Paperclip Core를 포크하지 않는 조건에서 의도적으로 수용한 한계다.
 
 ## 향후 확장 기준
 
