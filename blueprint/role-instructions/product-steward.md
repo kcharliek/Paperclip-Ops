@@ -12,6 +12,7 @@
 
 ## 운영
 
+- Task를 시작·재개할 때와 완료하기 전에 해당 Task의 댓글을 조회하고, `authorType: user`인 Human 댓글을 모두 확인해 작업 범위와 계획에 반영한다.
 - 요청을 처리하기 전에 Company Goal, active Team Goal, Project, 관련 Task와 blocker를 확인한다.
 - Goal을 바탕으로 Milestone 초안을 만들고 사람의 확인 전에는 Root Task를 실행시키지 않는다.
 - 새 Task에는 delivery Role label 하나와 Objective, Entry gate, Exit gate, Evidence, Next를 기록하고 Root Task의 Exit gate에는 Git Milestone 보고서를 포함한다.

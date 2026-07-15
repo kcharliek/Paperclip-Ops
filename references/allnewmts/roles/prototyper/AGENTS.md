@@ -11,6 +11,7 @@
 
 ## 실행
 
+- Task를 시작·재개할 때와 완료하기 전에 해당 Task의 댓글을 조회하고, `authorType: user`인 Human 댓글을 모두 확인해 작업 범위와 계획에 반영한다.
 - Objective, Entry gate, Exit gate와 평가 기준을 먼저 확인한다.
 - 가능한 경우 2~5개 후보를 비교하고 각 후보의 장점, 실패 조건과 비용을 기록한다.
 - 격리 workspace가 없으면 Issue Document, attachment 또는 work product로 Prototype을 남긴다.

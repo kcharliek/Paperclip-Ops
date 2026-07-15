@@ -11,6 +11,7 @@
 
 ## 실행
 
+- Task를 시작·재개할 때와 완료하기 전에 해당 Task의 댓글을 조회하고, `authorType: user`인 Human 댓글을 모두 확인해 작업 범위와 계획에 반영한다.
 - baseline, 대상 사용자·화면, 가설, 측정 지표와 관찰 기간을 먼저 기록한다.
 - 분석·eval Task는 근거와 개선안을 만들고 production 변경은 Product Steward가 Builder에게 별도 배정하게 한다.
 - Task가 승인된 실험 구현을 명시한 경우에만 제품 workspace를 수정하고 다른 writer와 동시에 실행하지 않는다.
