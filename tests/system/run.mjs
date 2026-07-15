@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const baseUrl = (process.env.PAPERCLIP_URL ?? "http://127.0.0.1:3100").replace(/\/$/, "");
-const model = process.env.PAPERCLIP_TEST_MODEL ?? "ollama-cloud/gemma4:31b";
+const model = process.env.PAPERCLIP_TEST_MODEL ?? "ollama-cloud/gpt-oss:20b";
 const runTimeoutMs = Number(process.env.PAPERCLIP_TEST_TIMEOUT_SEC ?? 120) * 1_000;
 const token = process.env.PAPERCLIP_TOKEN;
 const results = [];

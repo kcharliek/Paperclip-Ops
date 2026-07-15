@@ -7,7 +7,7 @@ Paperclip 위에 재사용 가능한 AI Company를 설계하고 운영하기 위
 PaperClip-Ops의 목표는 AI가 제품을 자율적으로 개선하고, 인간은 주기적인 업무 보고와 주요 마일스톤의 방향 조정에 집중하는 운영 시스템을 만드는 것이다.
 
 - 실무 작업은 AI Agent가 담당한다. 인간은 Board/Operator로서 목표, 예산, 위험한 변경과 마일스톤을 승인한다.
-- Product Steward는 인간의 니즈를 Goal과 Milestone으로 해석하고, Prototyper·Builder·Sweeper·Grower·Maintainer를 제품 단계에 맞게 배치한다.
+- 인간은 Goal과 Milestone의 방향·인수를 결정하고, Product Steward는 확인된 Milestone을 Prototyper·Builder·Sweeper·Grower·Maintainer의 Task tree로 연결한다.
 - 인간은 정해진 주기의 보고를 받고, 마일스톤 완료·실패·범위 변경 시 직접 개입한다.
 - 테스트용 Company와 제품은 실제 조직과 제품 개발에서 볼 수 있는 목표, 역할, 저장소 경계, 품질 게이트를 가진 현실적인 구조로 설계한다.
 - 자율성은 무제한 실행을 뜻하지 않는다. 가장 작은 검증 가능한 단면부터 진행하고, Task·Agent·재시도·동시 실행을 필요한 만큼만 허용한다.
@@ -36,6 +36,7 @@ PaperClip-Ops/
 - [AI Company Blueprint](blueprint/README.md): 범용 Company 구성 원칙과 설정 순서
 - [Role Blueprint](blueprint/roles.md): 공통 Role, 책임과 권한
 - [Delivery Lifecycle](blueprint/delivery-lifecycle.md): Role label, Task Gate, review와 전환
+- [Goal → Milestone → Task Workflow](blueprint/goal-milestone-task-workflow.md): 인간 확인 경계, child 분해와 reject 재진입
 - [Company Skill Blueprint](blueprint/company-skill.md): 도메인 지식을 분리하는 기준
 - [설계 지도](docs/design-map.md): Blueprint와 Company Profile의 경계
 - [운영 상태](docs/architecture.md): `normal`/`holding`/`maintenance`

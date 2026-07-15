@@ -18,10 +18,10 @@ node tests/system/run.mjs --preflight
 node tests/system/run.mjs
 ```
 
-모든 테스트 Agent는 `opencode_local` adapter와 OpenCode의 Ollama Cloud Gemma 4 모델 `ollama-cloud/gemma4:31b`를 사용한다. 기본 Paperclip 주소는 `http://127.0.0.1:3100`, Agent별 timeout은 120초다.
+모든 테스트 Agent는 `opencode_local` adapter와 OpenCode의 Ollama Cloud GPT-OSS 20B 모델 `ollama-cloud/gpt-oss:20b`를 사용한다. 기본 Paperclip 주소는 `http://127.0.0.1:3100`, Agent별 timeout은 120초다.
 
 ```bash
-PAPERCLIP_TEST_MODEL=ollama-cloud/gemma4:31b \
+PAPERCLIP_TEST_MODEL=ollama-cloud/gpt-oss:20b \
 PAPERCLIP_TEST_TIMEOUT_SEC=120 \
 PAPERCLIP_URL=http://127.0.0.1:3100 \
 node tests/system/run.mjs

@@ -2,8 +2,11 @@ import {
   definePlugin,
   runWorker,
   type Agent,
+  type Goal,
+  type Issue,
   type PluginContext,
   type PluginEvent,
+  type ToolRunContext,
 } from "@paperclipai/plugin-sdk";
 
 type Mode = "normal" | "holding" | "maintenance";
@@ -23,6 +26,34 @@ const STATE_KEY = "operation-state";
 const ARTIFACT_ISSUE_KEY = "operation-state-issue-id";
 const PAUSED_MARKER_KEY = "paused-by-operation-control";
 const ARTIFACT_ORIGIN = "plugin:operation-control" as const;
+const DELIVERY_STATE_KEY_PREFIX = "delivery-control:";
+const DELIVERY_NODE_KEY = "delivery-node";
+const DELIVERY_MILESTONE_KEY = "delivery-milestone";
+
+type DeliveryPhase =
+  | "goal_registered"
+  | "milestone_pending"
+  | "milestone_confirmed"
+  | "executing"
+  | "awaiting_human_confirmation"
+  | "completed";
+
+interface DeliveryState {
+  version: 1;
+  goalId: string;
+  milestoneId: string | null;
+  rootTaskId: string | null;
+  phase: DeliveryPhase;
+  rejectionCount: number;
+  changedAt: string;
+}
+
+interface DeliveryNode {
+  rootTaskId: string;
+  goalId: string;
+  milestoneId: string;
+  parentId: string | null;
+}
 
 const normalState = (): OperationState => ({
   version: 1,
@@ -40,6 +71,76 @@ function companyStateKey(companyId: string, stateKey: string) {
 
 function agentMarkerKey(agentId: string) {
   return { scopeKind: "agent" as const, scopeId: agentId, stateKey: PAUSED_MARKER_KEY };
+}
+
+function deliveryStateKey(companyId: string, goalId: string) {
+  return {
+    scopeKind: "company" as const,
+    scopeId: companyId,
+    stateKey: `${DELIVERY_STATE_KEY_PREFIX}${goalId}`,
+  };
+}
+
+function deliveryNodeKey(issueId: string) {
+  return { scopeKind: "issue" as const, scopeId: issueId, stateKey: DELIVERY_NODE_KEY };
+}
+
+function deliveryMilestoneKey(goalId: string) {
+  return { scopeKind: "goal" as const, scopeId: goalId, stateKey: DELIVERY_MILESTONE_KEY };
+}
+
+function actorAgentId(context: { actor: { type: string; agentId: string | null } }): string {
+  if (context.actor.type !== "agent" || !context.actor.agentId) {
+    throw new Error("This workflow step requires an Agent actor");
+  }
+  return context.actor.agentId;
+}
+
+function actorUser(context: { actor: { type: string; userId: string | null } }): string {
+  if (context.actor.type !== "user" || !context.actor.userId) {
+    throw new Error("This workflow step requires a human actor");
+  }
+  return context.actor.userId;
+}
+
+function stringParam(params: Record<string, unknown>, name: string): string {
+  const value = params[name];
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required`);
+  return value.trim();
+}
+
+function isTerminal(issue: Issue): boolean {
+  return issue.status === "done" || issue.status === "cancelled";
+}
+
+function freshDeliveryState(goalId: string): DeliveryState {
+  return {
+    version: 1,
+    goalId,
+    milestoneId: null,
+    rootTaskId: null,
+    phase: "goal_registered",
+    rejectionCount: 0,
+    changedAt: new Date().toISOString(),
+  };
+}
+
+function isDeliveryState(value: unknown): value is DeliveryState {
+  if (!value || typeof value !== "object") return false;
+  const state = value as Partial<DeliveryState>;
+  return state.version === 1
+    && typeof state.goalId === "string"
+    && (state.milestoneId === null || typeof state.milestoneId === "string")
+    && (state.rootTaskId === null || typeof state.rootTaskId === "string")
+    && [
+      "goal_registered",
+      "milestone_pending",
+      "milestone_confirmed",
+      "executing",
+      "awaiting_human_confirmation",
+      "completed",
+    ].includes(state.phase ?? "")
+    && typeof state.rejectionCount === "number";
 }
 
 function readAgentId(event: PluginEvent): string | null {
@@ -89,6 +190,195 @@ export function createOperationPlugin() {
       const getState = async (companyId: string): Promise<OperationState> => {
         const value = await ctx.state.get(companyStateKey(companyId, STATE_KEY));
         return isOperationState(value) ? value : normalState();
+      };
+
+      const getDeliveryState = async (companyId: string, goalId: string): Promise<DeliveryState | null> => {
+        const value = await ctx.state.get(deliveryStateKey(companyId, goalId));
+        return isDeliveryState(value) ? value : null;
+      };
+
+      const saveDeliveryState = async (
+        companyId: string,
+        state: DeliveryState,
+      ): Promise<DeliveryState> => {
+        const next = { ...state, changedAt: new Date().toISOString() };
+        await ctx.state.set(deliveryStateKey(companyId, state.goalId), next);
+        if (next.milestoneId) await ctx.state.set(deliveryMilestoneKey(next.milestoneId), next);
+        if (next.rootTaskId) {
+          await ctx.state.set(deliveryNodeKey(next.rootTaskId), {
+            rootTaskId: next.rootTaskId,
+            goalId: next.goalId,
+            milestoneId: next.milestoneId,
+            parentId: null,
+          } satisfies DeliveryNode);
+        }
+        return next;
+      };
+
+      const getIssueNode = async (issueId: string): Promise<DeliveryNode | null> => {
+        const value = await ctx.state.get(deliveryNodeKey(issueId));
+        if (!value || typeof value !== "object") return null;
+        const node = value as Partial<DeliveryNode>;
+        return typeof node.rootTaskId === "string" && typeof node.goalId === "string" && typeof node.milestoneId === "string"
+          ? { rootTaskId: node.rootTaskId, goalId: node.goalId, milestoneId: node.milestoneId, parentId: node.parentId ?? null }
+          : null;
+      };
+
+      const getIssueDelivery = async (
+        companyId: string,
+        issue: Issue,
+      ): Promise<{ state: DeliveryState; node: DeliveryNode } | null> => {
+        let current: Issue | null = issue;
+        while (current) {
+          const node = await getIssueNode(current.id);
+          if (node) {
+            const state = await getDeliveryState(companyId, node.goalId);
+            return state ? { state, node } : null;
+          }
+          current = current.parentId ? await ctx.issues.get(current.parentId, companyId) : null;
+        }
+        return null;
+      };
+
+      const directChildren = async (issueId: string, companyId: string): Promise<Issue[]> => {
+        const subtree = await ctx.issues.getSubtree(issueId, companyId, { includeRoot: false });
+        return subtree.issues.filter((item) => item.parentId === issueId);
+      };
+
+      const requireGoal = async (goalId: string, companyId: string): Promise<Goal> => {
+        const goal = await ctx.goals.get(goalId, companyId);
+        if (!goal) throw new Error("Goal not found");
+        return goal;
+      };
+
+      const getOrchestratorRole = async (): Promise<string> => {
+        const config = await ctx.config.get();
+        const role = config.orchestratorRole;
+        if (typeof role !== "string" || !role.trim()) {
+          throw new Error("operation-control requires config.orchestratorRole");
+        }
+        return role.trim();
+      };
+
+      const requireOrchestrator = async (agentId: string, companyId: string): Promise<Agent> => {
+        const orchestratorRole = await getOrchestratorRole();
+        const agent = await ctx.agents.get(agentId, companyId);
+        if (!agent || agent.status === "terminated" || agent.role !== orchestratorRole) {
+          throw new Error("Only the configured workflow orchestrator may perform this workflow step");
+        }
+        return agent;
+      };
+
+      const createChildTask = async (
+        companyId: string,
+        actorId: string,
+        actorRunId: string | null,
+        params: Record<string, unknown>,
+      ) => {
+        const parent = await ctx.issues.get(stringParam(params, "parentIssueId"), companyId);
+        if (!parent) throw new Error("Parent Task not found");
+        const tracked = await getIssueDelivery(companyId, parent);
+        if (!tracked || tracked.state.phase === "completed") throw new Error("Parent is not in an active delivery workflow");
+        if (parent.assigneeAgentId !== actorId) throw new Error("Only the parent Task owner may decompose it");
+        if (parent.status === "done" || parent.status === "cancelled") throw new Error("A terminal parent cannot receive child Tasks");
+
+        const assigneeAgentId = stringParam(params, "assigneeAgentId");
+        if (assigneeAgentId === actorId) throw new Error("A parent owner cannot review its own child Task");
+        const assignee = await ctx.agents.get(assigneeAgentId, companyId);
+        if (!assignee || assignee.status === "terminated") throw new Error("Child assignee must be active");
+
+        const blockedByIssueIds = Array.isArray(params.blockedByIssueIds)
+          ? params.blockedByIssueIds.filter((value): value is string => typeof value === "string")
+          : [];
+        for (const blockerId of blockedByIssueIds) {
+          const blocker = await ctx.issues.get(blockerId, companyId);
+          if (!blocker || blocker.parentId !== parent.id) throw new Error("Sibling blockers must share the same parent");
+        }
+
+        const child = await ctx.issues.create({
+          companyId,
+          parentId: parent.id,
+          goalId: parent.goalId ?? undefined,
+          inheritExecutionWorkspaceFromIssueId: parent.id,
+          title: stringParam(params, "title"),
+          description: typeof params.description === "string" ? params.description : undefined,
+          status: "todo",
+          priority: parent.priority,
+          assigneeAgentId,
+          blockedByIssueIds,
+          originKind: "plugin:local.operation-control:delivery-child",
+          originId: `${parent.id}:${Date.now()}`,
+          actor: { actorAgentId: actorId, actorRunId },
+        });
+        await ctx.state.set(deliveryNodeKey(child.id), {
+          rootTaskId: tracked.node.rootTaskId,
+          goalId: tracked.state.goalId,
+          milestoneId: tracked.node.milestoneId,
+          parentId: parent.id,
+        } satisfies DeliveryNode);
+        if (parent.status === "todo" || parent.status === "backlog") {
+          await ctx.issues.update(parent.id, { status: "in_progress" }, companyId, { actorAgentId: actorId, actorRunId });
+        }
+        return child;
+      };
+
+      const reviewNode = async (
+        companyId: string,
+        actorId: string,
+        actorRunId: string | null,
+        params: Record<string, unknown>,
+      ) => {
+        const issue = await ctx.issues.get(stringParam(params, "issueId"), companyId);
+        if (!issue) throw new Error("Node Task not found");
+        const tracked = await getIssueDelivery(companyId, issue);
+        if (!tracked || tracked.state.phase === "completed") throw new Error("Task is not in an active delivery workflow");
+        if (issue.assigneeAgentId !== actorId) throw new Error("Only the Node owner may review its children");
+
+        const children = await directChildren(issue.id, companyId);
+        if (!children.length) throw new Error("A Node Task must have at least one child");
+        if (children.some((child) => !isTerminal(child))) throw new Error("All child Tasks must be terminal before review");
+        if (children.some((child) => child.assigneeAgentId === actorId)) {
+          throw new Error("The Node owner cannot review a child it executed");
+        }
+
+        const decision = params.decision;
+        if (decision !== "approved" && decision !== "rejected") throw new Error("decision must be approved or rejected");
+        if (decision === "rejected") {
+          const reason = stringParam(params, "reason");
+          const remediation = await ctx.issues.create({
+            companyId,
+            parentId: issue.id,
+            goalId: issue.goalId ?? undefined,
+            inheritExecutionWorkspaceFromIssueId: issue.id,
+            title: `Remediation: ${reason.slice(0, 80)}`,
+            description: `## Rejection reason\n\n${reason}`,
+            status: "todo",
+            priority: issue.priority,
+            assigneeAgentId: stringParam(params, "assigneeAgentId"),
+            originKind: "plugin:local.operation-control:delivery-remediation",
+            originId: `${issue.id}:rejection:${tracked.state.rejectionCount + 1}`,
+            actor: { actorAgentId: actorId, actorRunId },
+          });
+          await ctx.state.set(deliveryNodeKey(remediation.id), {
+            rootTaskId: tracked.node.rootTaskId,
+            goalId: tracked.state.goalId,
+            milestoneId: tracked.node.milestoneId,
+            parentId: issue.id,
+          } satisfies DeliveryNode);
+          await ctx.issues.update(issue.id, { status: "in_progress" }, companyId, { actorAgentId: actorId, actorRunId });
+          await saveDeliveryState(companyId, {
+            ...tracked.state,
+            phase: "executing",
+            rejectionCount: tracked.state.rejectionCount + 1,
+          });
+          return { decision, remediationIssueId: remediation.id };
+        }
+
+        await ctx.issues.update(issue.id, { status: "done" }, companyId, { actorAgentId: actorId, actorRunId });
+        if (issue.id === tracked.state.rootTaskId) {
+          await saveDeliveryState(companyId, { ...tracked.state, phase: "awaiting_human_confirmation" });
+        }
+        return { decision, issueId: issue.id, phase: issue.id === tracked.state.rootTaskId ? "awaiting_human_confirmation" : "executing" };
       };
 
       const ensureArtifactIssue = async (companyId: string): Promise<string> => {
@@ -246,6 +536,329 @@ export function createOperationPlugin() {
         await pauseAgent(event.companyId, agentId, false);
         await reconcile(event.companyId, state, false);
       };
+
+      const registerGoal = async (companyId: string, userId: string, params: Record<string, unknown>) => {
+        const goal = await ctx.goals.create({
+          companyId,
+          title: stringParam(params, "title"),
+          description: typeof params.description === "string" ? params.description : undefined,
+          level: "company",
+          status: "active",
+        });
+        await saveDeliveryState(companyId, freshDeliveryState(goal.id));
+        ctx.logger.info("Delivery Goal registered", { companyId, goalId: goal.id, userId });
+        return goal;
+      };
+
+      const proposeMilestone = async (companyId: string, agentId: string, params: Record<string, unknown>) => {
+        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
+        if (goal.level !== "company") throw new Error("Milestones must be based on a company Goal");
+        await requireOrchestrator(agentId, companyId);
+        const current = await getDeliveryState(companyId, goal.id);
+        if (!current) throw new Error("Register the Goal through delivery-control first");
+        if (current.milestoneId) throw new Error("This Goal already has a Milestone in progress");
+
+        const milestone = await ctx.goals.create({
+          companyId,
+          title: stringParam(params, "title"),
+          description: typeof params.description === "string" ? params.description : undefined,
+          level: "team",
+          status: "planned",
+          parentId: goal.id,
+          ownerAgentId: agentId,
+        });
+        await saveDeliveryState(companyId, { ...current, milestoneId: milestone.id, phase: "milestone_pending" });
+        return milestone;
+      };
+
+      const confirmMilestone = async (companyId: string, userId: string, params: Record<string, unknown>) => {
+        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
+        const state = await getDeliveryState(companyId, goal.id);
+        if (!state?.milestoneId || state.phase !== "milestone_pending") throw new Error("No Milestone is awaiting human confirmation");
+        const milestone = await requireGoal(state.milestoneId, companyId);
+        const confirmed = await ctx.goals.update(milestone.id, { status: "active" }, companyId);
+        await saveDeliveryState(companyId, { ...state, phase: "milestone_confirmed" });
+        ctx.logger.info("Milestone confirmed by human", { companyId, goalId: goal.id, milestoneId: milestone.id, userId });
+        return confirmed;
+      };
+
+      const createRootTask = async (companyId: string, agentId: string, runId: string | null, params: Record<string, unknown>) => {
+        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
+        const orchestrator = await requireOrchestrator(agentId, companyId);
+        const state = await getDeliveryState(companyId, goal.id);
+        if (!state?.milestoneId || state.phase !== "milestone_confirmed") throw new Error("Milestone must be human-confirmed before Root Task creation");
+        const assigneeAgentId = stringParam(params, "assigneeAgentId");
+        const assignee = await ctx.agents.get(assigneeAgentId, companyId);
+        if (!assignee || assignee.status === "terminated" || assignee.role === orchestrator.role) throw new Error("Root Task must be assigned to an active execution Agent");
+        const root = await ctx.issues.create({
+          companyId,
+          projectId: typeof params.projectId === "string" ? params.projectId : undefined,
+          goalId: state.milestoneId,
+          title: stringParam(params, "title"),
+          description: typeof params.description === "string" ? params.description : undefined,
+          status: "todo",
+          priority: "high",
+          assigneeAgentId,
+          originKind: "plugin:local.operation-control:delivery-root",
+          originId: `${state.milestoneId}:root`,
+          actor: { actorAgentId: agentId, actorRunId: runId },
+        });
+        await ctx.state.set(deliveryNodeKey(root.id), {
+          rootTaskId: root.id,
+          goalId: goal.id,
+          milestoneId: state.milestoneId,
+          parentId: null,
+        } satisfies DeliveryNode);
+        await saveDeliveryState(companyId, { ...state, rootTaskId: root.id, phase: "executing" });
+        return root;
+      };
+
+      const reviewMilestone = async (companyId: string, userId: string, params: Record<string, unknown>) => {
+        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
+        const state = await getDeliveryState(companyId, goal.id);
+        if (!state?.milestoneId || state.phase !== "awaiting_human_confirmation" || !state.rootTaskId) {
+          throw new Error("Milestone is not awaiting final human confirmation");
+        }
+        const root = await ctx.issues.get(state.rootTaskId, companyId);
+        if (!root || root.status !== "done") throw new Error("Root Task must be done before Milestone confirmation");
+        const decision = params.decision;
+        if (decision !== "approved" && decision !== "rejected") throw new Error("decision must be approved or rejected");
+
+        if (decision === "approved") {
+          const milestone = await ctx.goals.update(state.milestoneId, { status: "achieved" }, companyId);
+          await saveDeliveryState(companyId, { ...state, phase: "completed" });
+          ctx.logger.info("Milestone completed by human", { companyId, goalId: goal.id, milestoneId: state.milestoneId, userId });
+          return { decision, milestone };
+        }
+
+        const reason = stringParam(params, "reason");
+        const assigneeAgentId = stringParam(params, "assigneeAgentId");
+        if (assigneeAgentId === root.assigneeAgentId) throw new Error("Milestone remediation must have an independent executor");
+        const remediation = await ctx.issues.create({
+          companyId,
+          parentId: root.id,
+          goalId: state.milestoneId,
+          inheritExecutionWorkspaceFromIssueId: root.id,
+          title: `Milestone remediation: ${reason.slice(0, 80)}`,
+          description: `## Human rejection\n\n${reason}`,
+          status: "todo",
+          priority: root.priority,
+          assigneeAgentId,
+          originKind: "plugin:local.operation-control:delivery-remediation",
+          originId: `${root.id}:human-rejection:${state.rejectionCount + 1}`,
+          actor: { actorUserId: userId },
+        });
+        await ctx.state.set(deliveryNodeKey(remediation.id), {
+          rootTaskId: root.id,
+          goalId: goal.id,
+          milestoneId: state.milestoneId,
+          parentId: root.id,
+        } satisfies DeliveryNode);
+        await ctx.issues.update(root.id, { status: "in_progress" }, companyId, { actorUserId: userId });
+        await saveDeliveryState(companyId, { ...state, phase: "executing", rejectionCount: state.rejectionCount + 1 });
+        return { decision, remediationIssueId: remediation.id, phase: "executing" };
+      };
+
+      const deliveryData = async (params: Record<string, unknown>) => {
+        const companyId = readCompanyId(params);
+        const goalId = stringParam(params, "goalId");
+        const state = await getDeliveryState(companyId, goalId);
+        const milestone = state?.milestoneId ? await ctx.goals.get(state.milestoneId, companyId) : null;
+        const root = state?.rootTaskId ? await ctx.issues.get(state.rootTaskId, companyId) : null;
+        return { state, milestone, root };
+      };
+
+      const handleIssueCreated = async (event: PluginEvent) => {
+        const issueId = event.entityId ?? ((event.payload as Record<string, unknown> | null)?.issueId as string | undefined);
+        if (!issueId) return;
+        const issue = await ctx.issues.get(issueId, event.companyId);
+        if (!issue || !issue.parentId) return;
+        const tracked = await getIssueDelivery(event.companyId, issue);
+        if (!tracked || event.actorType === "plugin") return;
+        await ctx.issues.update(issue.id, { status: "cancelled" }, event.companyId);
+        await ctx.issues.createComment(issue.id, "Workflow guard: child Task는 delivery-control plugin을 통해서만 생성할 수 있습니다.", event.companyId);
+        ctx.logger.warn("Cancelled an out-of-band child Task", { companyId: event.companyId, issueId });
+      };
+
+      const handleIssueUpdated = async (event: PluginEvent) => {
+        if (event.actorType === "plugin") return;
+        const issueId = event.entityId ?? ((event.payload as Record<string, unknown> | null)?.issueId as string | undefined);
+        if (!issueId) return;
+        const issue = await ctx.issues.get(issueId, event.companyId);
+        if (!issue || issue.status !== "done") return;
+        const tracked = await getIssueDelivery(event.companyId, issue);
+        if (!tracked || tracked.state.phase === "completed") return;
+        if (!(await directChildren(issue.id, event.companyId)).length) return;
+        await ctx.issues.update(issue.id, { status: "in_review" }, event.companyId);
+        await ctx.issues.createComment(issue.id, "Workflow guard: child가 있는 Node/Root Task는 parent owner review를 거쳐야 완료됩니다.", event.companyId);
+        ctx.logger.warn("Reopened an out-of-band parent completion", { companyId: event.companyId, issueId });
+      };
+
+      const handleGoalUpdated = async (event: PluginEvent) => {
+        const goalId = event.entityId ?? ((event.payload as Record<string, unknown> | null)?.goalId as string | undefined);
+        if (!goalId || event.actorType === "plugin") return;
+        const marker = await ctx.state.get(deliveryMilestoneKey(goalId));
+        if (!isDeliveryState(marker)) return;
+        const goal = await ctx.goals.get(goalId, event.companyId);
+        if (!goal) return;
+        if (marker.phase !== "awaiting_human_confirmation" && goal.status === "achieved") {
+          await ctx.goals.update(goalId, { status: marker.phase === "milestone_pending" ? "planned" : "active" }, event.companyId);
+          ctx.logger.warn("Reverted an out-of-band Milestone completion", { companyId: event.companyId, goalId });
+        }
+      };
+
+      ctx.data.register("delivery-control", deliveryData);
+
+      ctx.actions.register("register-goal", async (params, context) => {
+        const companyId = readCompanyId(params, context.companyId);
+        return serialized(companyId, () => registerGoal(companyId, actorUser(context), params));
+      });
+
+      ctx.actions.register("propose-milestone", async (params, context) => {
+        const companyId = readCompanyId(params, context.companyId);
+        const agentId = actorAgentId(context);
+        return serialized(companyId, () => proposeMilestone(companyId, agentId, params));
+      });
+
+      ctx.actions.register("confirm-milestone", async (params, context) => {
+        const companyId = readCompanyId(params, context.companyId);
+        return serialized(companyId, () => confirmMilestone(companyId, actorUser(context), params));
+      });
+
+      ctx.actions.register("create-root-task", async (params, context) => {
+        const companyId = readCompanyId(params, context.companyId);
+        const agentId = actorAgentId(context);
+        return serialized(companyId, () => createRootTask(companyId, agentId, context.actor.runId, params));
+      });
+
+      ctx.actions.register("create-child-task", async (params, context) => {
+        const companyId = readCompanyId(params, context.companyId);
+        const agentId = actorAgentId(context);
+        return serialized(companyId, () => createChildTask(companyId, agentId, context.actor.runId, params));
+      });
+
+      ctx.actions.register("review-node", async (params, context) => {
+        const companyId = readCompanyId(params, context.companyId);
+        const agentId = actorAgentId(context);
+        return serialized(companyId, () => reviewNode(companyId, agentId, context.actor.runId, params));
+      });
+
+      ctx.actions.register("review-milestone", async (params, context) => {
+        const companyId = readCompanyId(params, context.companyId);
+        return serialized(companyId, () => reviewMilestone(companyId, actorUser(context), params));
+      });
+
+      ctx.tools.register(
+        "propose-milestone",
+        {
+          displayName: "Propose Milestone",
+          description: "Create a Milestone proposal below a registered Goal.",
+          parametersSchema: {
+            type: "object",
+            properties: {
+              goalId: { type: "string" },
+              title: { type: "string" },
+              description: { type: "string" },
+            },
+            required: ["goalId", "title"],
+          },
+        },
+        async (params, runContext: ToolRunContext) => {
+          const result = await serialized(runContext.companyId, () => proposeMilestone(
+            runContext.companyId,
+            runContext.agentId,
+            params as Record<string, unknown>,
+          ));
+          return { content: JSON.stringify(result), data: result };
+        },
+      );
+
+      ctx.tools.register(
+        "create-root-task",
+        {
+          displayName: "Create Root Task",
+          description: "Create the Root Task after a human confirms the Milestone.",
+          parametersSchema: {
+            type: "object",
+            properties: {
+              goalId: { type: "string" },
+              projectId: { type: "string" },
+              title: { type: "string" },
+              description: { type: "string" },
+              assigneeAgentId: { type: "string" },
+            },
+            required: ["goalId", "title", "assigneeAgentId"],
+          },
+        },
+        async (params, runContext: ToolRunContext) => {
+          const result = await serialized(runContext.companyId, () => createRootTask(
+            runContext.companyId,
+            runContext.agentId,
+            runContext.runId,
+            params as Record<string, unknown>,
+          ));
+          return { content: JSON.stringify(result), data: result };
+        },
+      );
+
+      ctx.tools.register(
+        "create-child-task",
+        {
+          displayName: "Create child Task",
+          description: "Create a child Task only below the current Agent's owned Node Task.",
+          parametersSchema: {
+            type: "object",
+            properties: {
+              parentIssueId: { type: "string" },
+              title: { type: "string" },
+              description: { type: "string" },
+              assigneeAgentId: { type: "string" },
+              blockedByIssueIds: { type: "array", items: { type: "string" } },
+            },
+            required: ["parentIssueId", "title", "assigneeAgentId"],
+          },
+        },
+        async (params, runContext: ToolRunContext) => {
+          const result = await serialized(runContext.companyId, () => createChildTask(
+            runContext.companyId,
+            runContext.agentId,
+            runContext.runId,
+            params as Record<string, unknown>,
+          ));
+          return { content: JSON.stringify(result), data: result };
+        },
+      );
+
+      ctx.tools.register(
+        "review-node",
+        {
+          displayName: "Review Node Task",
+          description: "Approve or reject a Node Task after all direct child Tasks are terminal.",
+          parametersSchema: {
+            type: "object",
+            properties: {
+              issueId: { type: "string" },
+              decision: { type: "string", enum: ["approved", "rejected"] },
+              reason: { type: "string" },
+              assigneeAgentId: { type: "string" },
+            },
+            required: ["issueId", "decision"],
+          },
+        },
+        async (params, runContext: ToolRunContext) => {
+          const result = await serialized(runContext.companyId, () => reviewNode(
+            runContext.companyId,
+            runContext.agentId,
+            runContext.runId,
+            params as Record<string, unknown>,
+          ));
+          return { content: JSON.stringify(result), data: result };
+        },
+      );
+
+      ctx.events.on("issue.created", (event) => serialized(event.companyId, () => handleIssueCreated(event)));
+      ctx.events.on("issue.updated", (event) => serialized(event.companyId, () => handleIssueUpdated(event)));
+      ctx.events.on("goal.updated", (event) => serialized(event.companyId, () => handleGoalUpdated(event)));
 
       ctx.data.register("operation-control", async (params) => {
         const companyId = readCompanyId(params);

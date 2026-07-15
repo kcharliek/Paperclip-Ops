@@ -27,8 +27,9 @@ Board (Human owner)
 ## Paperclip 제약을 반영한 공통 규칙
 
 - 모든 실행 Role은 Product Steward 한 명에게 직접 보고한다. Paperclip의 `reportsTo`는 하나만 허용한다.
-- Product Steward만 일반 Task를 배정한다. 실행 Role은 후속 필요를 Task comment로 보고하고 다른 Agent에게 직접 배정하지 않는다.
+- Product Steward는 Root Task와 Agent 간 배정을 담당한다. Node 담당 Agent는 자신이 맡은 Node 아래의 child를 분해할 수 있지만 Goal·Milestone·형제 범위를 바꾸거나 다른 Root를 만들 수 없다. Paperclip 권한이 없으면 Product Steward가 분해안을 받아 child 생성을 대행한다.
 - 각 Task에는 delivery Role label 하나와 [Delivery 계약](delivery-lifecycle.md)을 기록한다.
+- Leaf 완료는 상위 Node 담당자가 확인하고, Node와 Root 완료는 부모의 review stage를 통과해야 한다. 인간은 Milestone만 확인·거절한다.
 - 구현 결과는 Paperclip `executionPolicy`의 review stage를 거친다. 작성자와 reviewer는 달라야 한다.
 - 고위험 변경은 review 뒤 Board approval stage를 추가한다.
 - shared workspace의 writer 동시 실행은 1이다. 독립 Git history와 isolated workspace가 확인된 경우에만 병렬 writer를 늘린다.
