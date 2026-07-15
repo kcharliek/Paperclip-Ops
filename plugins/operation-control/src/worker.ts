@@ -43,9 +43,19 @@ interface DeliveryState {
   goalId: string;
   milestoneId: string | null;
   rootTaskId: string | null;
+  orchestratorAgentId?: string | null;
+  rootOwnerAgentId?: string | null;
+  report?: MilestoneReport | null;
   phase: DeliveryPhase;
   rejectionCount: number;
   changedAt: string;
+}
+
+interface MilestoneReport {
+  path: string;
+  commitSha: string;
+  summary: string;
+  interactionId: string;
 }
 
 interface DeliveryNode {
@@ -109,6 +119,14 @@ function stringParam(params: Record<string, unknown>, name: string): string {
   return value.trim();
 }
 
+function reportCommitParam(params: Record<string, unknown>): string {
+  const value = stringParam(params, "commitSha").toLowerCase();
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value)) {
+    throw new Error("commitSha must be a full Git commit SHA");
+  }
+  return value;
+}
+
 function isTerminal(issue: Issue): boolean {
   return issue.status === "done" || issue.status === "cancelled";
 }
@@ -119,6 +137,9 @@ function freshDeliveryState(goalId: string): DeliveryState {
     goalId,
     milestoneId: null,
     rootTaskId: null,
+    orchestratorAgentId: null,
+    rootOwnerAgentId: null,
+    report: null,
     phase: "goal_registered",
     rejectionCount: 0,
     changedAt: new Date().toISOString(),
@@ -132,6 +153,14 @@ function isDeliveryState(value: unknown): value is DeliveryState {
     && typeof state.goalId === "string"
     && (state.milestoneId === null || typeof state.milestoneId === "string")
     && (state.rootTaskId === null || typeof state.rootTaskId === "string")
+    && (state.orchestratorAgentId == null || typeof state.orchestratorAgentId === "string")
+    && (state.rootOwnerAgentId == null || typeof state.rootOwnerAgentId === "string")
+    && (state.report == null || (
+      typeof state.report.path === "string"
+      && typeof state.report.commitSha === "string"
+      && typeof state.report.summary === "string"
+      && typeof state.report.interactionId === "string"
+    ))
     && [
       "goal_registered",
       "milestone_pending",
@@ -269,6 +298,15 @@ export function createOperationPlugin() {
         return agent;
       };
 
+      const resolveOrchestrator = async (companyId: string, preferredAgentId?: string | null): Promise<Agent> => {
+        if (preferredAgentId) return requireOrchestrator(preferredAgentId, companyId);
+        const role = await getOrchestratorRole();
+        const matches = (await ctx.agents.list({ companyId }))
+          .filter((agent) => agent.status !== "terminated" && agent.role === role);
+        if (matches.length !== 1) throw new Error("Delivery workflow requires exactly one active orchestrator");
+        return matches[0];
+      };
+
       const createChildTask = async (
         companyId: string,
         actorId: string,
@@ -374,11 +412,30 @@ export function createOperationPlugin() {
           return { decision, remediationIssueId: remediation.id };
         }
 
-        await ctx.issues.update(issue.id, { status: "done" }, companyId, { actorAgentId: actorId, actorRunId });
         if (issue.id === tracked.state.rootTaskId) {
-          await saveDeliveryState(companyId, { ...tracked.state, phase: "awaiting_human_confirmation" });
+          const orchestrator = await resolveOrchestrator(companyId, tracked.state.orchestratorAgentId);
+          await ctx.issues.update(
+            issue.id,
+            { status: "in_review", assigneeAgentId: orchestrator.id },
+            companyId,
+            { actorAgentId: actorId, actorRunId },
+          );
+          await saveDeliveryState(companyId, {
+            ...tracked.state,
+            orchestratorAgentId: orchestrator.id,
+            phase: "executing",
+          });
+          await ctx.issues.requestWakeup(issue.id, companyId, {
+            reason: "Root review completed; verify the Git milestone report and request Board confirmation.",
+            contextSource: "operation-control:milestone-report",
+            idempotencyKey: `${issue.id}:milestone-report:${tracked.state.rejectionCount}`,
+            actorAgentId: actorId,
+            actorRunId,
+          });
+          return { decision, issueId: issue.id, phase: "executing", next: "milestone_report" };
         }
-        return { decision, issueId: issue.id, phase: issue.id === tracked.state.rootTaskId ? "awaiting_human_confirmation" : "executing" };
+        await ctx.issues.update(issue.id, { status: "done" }, companyId, { actorAgentId: actorId, actorRunId });
+        return { decision, issueId: issue.id, phase: "executing" };
       };
 
       const ensureArtifactIssue = async (companyId: string): Promise<string> => {
@@ -609,44 +666,141 @@ export function createOperationPlugin() {
           milestoneId: state.milestoneId,
           parentId: null,
         } satisfies DeliveryNode);
-        await saveDeliveryState(companyId, { ...state, rootTaskId: root.id, phase: "executing" });
+        await saveDeliveryState(companyId, {
+          ...state,
+          rootTaskId: root.id,
+          orchestratorAgentId: agentId,
+          rootOwnerAgentId: assigneeAgentId,
+          report: null,
+          phase: "executing",
+        });
         return root;
       };
 
-      const reviewMilestone = async (companyId: string, userId: string, params: Record<string, unknown>) => {
+      const requestMilestoneReview = async (
+        companyId: string,
+        agentId: string,
+        runId: string | null,
+        params: Record<string, unknown>,
+      ) => {
         const goal = await requireGoal(stringParam(params, "goalId"), companyId);
+        await requireOrchestrator(agentId, companyId);
         const state = await getDeliveryState(companyId, goal.id);
-        if (!state?.milestoneId || state.phase !== "awaiting_human_confirmation" || !state.rootTaskId) {
-          throw new Error("Milestone is not awaiting final human confirmation");
+        if (!state?.milestoneId || !state.rootTaskId) throw new Error("Milestone delivery is not ready for reporting");
+        const reportPath = stringParam(params, "reportPath");
+        const expectedPath = `docs/milestones/${state.milestoneId}.md`;
+        if (reportPath !== expectedPath) throw new Error(`reportPath must be ${expectedPath}`);
+        const commitSha = reportCommitParam(params);
+        const summary = stringParam(params, "summary");
+        if (summary.length > 1000) throw new Error("summary must be 1000 characters or fewer");
+        const evidence = typeof params.evidence === "string" ? params.evidence.trim() : "";
+        if (evidence.length > 18000) throw new Error("evidence must be 18000 characters or fewer");
+
+        if (state.phase === "awaiting_human_confirmation" && state.report) {
+          if (state.report.path !== reportPath || state.report.commitSha !== commitSha || state.report.summary !== summary) {
+            throw new Error("A different Milestone report is already awaiting confirmation");
+          }
+          return { interactionId: state.report.interactionId, report: state.report, phase: state.phase };
+        }
+        if (state.phase !== "executing") throw new Error("Milestone is not ready for a completion report");
+        const root = await ctx.issues.get(state.rootTaskId, companyId);
+        if (!root || root.status !== "in_review" || root.assigneeAgentId !== agentId) {
+          throw new Error("Root Task must be in review with the workflow orchestrator");
+        }
+        const milestone = await requireGoal(state.milestoneId, companyId);
+        const detailsMarkdown = [
+          `- Report: \`${reportPath}\``,
+          `- Git commit: \`${commitSha}\``,
+          `- Summary: ${summary}`,
+          evidence ? `\n## Evidence\n\n${evidence}` : "",
+        ].filter(Boolean).join("\n");
+        const interaction = await ctx.issues.requestConfirmation(root.id, {
+          idempotencyKey: `milestone-report:${state.milestoneId}:${commitSha}`,
+          sourceRunId: runId,
+          title: `Milestone 완료 보고: ${milestone.title}`.slice(0, 240),
+          summary,
+          continuationPolicy: "wake_assignee",
+          payload: {
+            version: 1,
+            prompt: `Milestone '${milestone.title}'의 완료 보고를 승인하시겠습니까?`,
+            acceptLabel: "승인",
+            rejectLabel: "보완 요청",
+            rejectRequiresReason: true,
+            rejectReasonLabel: "보완이 필요한 이유",
+            detailsMarkdown,
+            supersedeOnUserComment: false,
+            target: {
+              type: "custom",
+              key: `milestone-report:${state.milestoneId}`,
+              revisionId: commitSha,
+              label: reportPath,
+            },
+          },
+        }, companyId, { authorAgentId: agentId });
+        const report: MilestoneReport = { path: reportPath, commitSha, summary, interactionId: interaction.id };
+        await saveDeliveryState(companyId, { ...state, report, phase: "awaiting_human_confirmation" });
+        return { interactionId: interaction.id, report, phase: "awaiting_human_confirmation" };
+      };
+
+      const recordMilestoneConfirmation = async (
+        companyId: string,
+        agentId: string,
+        runId: string | null,
+        params: Record<string, unknown>,
+      ) => {
+        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
+        await requireOrchestrator(agentId, companyId);
+        const state = await getDeliveryState(companyId, goal.id);
+        if (!state?.milestoneId || !state.rootTaskId || state.phase !== "awaiting_human_confirmation" || !state.report) {
+          throw new Error("Milestone is not awaiting a Paperclip confirmation");
+        }
+        if (stringParam(params, "interactionId") !== state.report.interactionId) {
+          throw new Error("interactionId does not match the pending Milestone report");
         }
         const root = await ctx.issues.get(state.rootTaskId, companyId);
-        if (!root || root.status !== "done") throw new Error("Root Task must be done before Milestone confirmation");
+        if (!root || root.status !== "in_review" || root.assigneeAgentId !== agentId) {
+          throw new Error("Root Task must still be assigned to the workflow orchestrator");
+        }
         const decision = params.decision;
-        if (decision !== "approved" && decision !== "rejected") throw new Error("decision must be approved or rejected");
+        if (decision !== "accepted" && decision !== "rejected") throw new Error("decision must be accepted or rejected");
 
-        if (decision === "approved") {
+        // ponytail: the current SDK can create but not read interaction results; trust the configured
+        // orchestrator's Paperclip continuation until interaction read/events are added to the SDK.
+        if (decision === "accepted") {
+          await ctx.issues.update(root.id, { status: "done" }, companyId, { actorAgentId: agentId, actorRunId: runId });
           const milestone = await ctx.goals.update(state.milestoneId, { status: "achieved" }, companyId);
           await saveDeliveryState(companyId, { ...state, phase: "completed" });
-          ctx.logger.info("Milestone completed by human", { companyId, goalId: goal.id, milestoneId: state.milestoneId, userId });
+          ctx.logger.info("Milestone completed after Paperclip confirmation", {
+            companyId,
+            goalId: goal.id,
+            milestoneId: state.milestoneId,
+            interactionId: state.report.interactionId,
+          });
           return { decision, milestone };
         }
 
         const reason = stringParam(params, "reason");
         const assigneeAgentId = stringParam(params, "assigneeAgentId");
-        if (assigneeAgentId === root.assigneeAgentId) throw new Error("Milestone remediation must have an independent executor");
+        const rootOwnerAgentId = state.rootOwnerAgentId;
+        if (!rootOwnerAgentId) throw new Error("Original Root Task owner is unavailable");
+        if (assigneeAgentId === rootOwnerAgentId || assigneeAgentId === agentId) {
+          throw new Error("Milestone remediation must have an independent executor");
+        }
+        const assignee = await ctx.agents.get(assigneeAgentId, companyId);
+        if (!assignee || assignee.status === "terminated") throw new Error("Remediation assignee must be active");
         const remediation = await ctx.issues.create({
           companyId,
           parentId: root.id,
           goalId: state.milestoneId,
           inheritExecutionWorkspaceFromIssueId: root.id,
           title: `Milestone remediation: ${reason.slice(0, 80)}`,
-          description: `## Human rejection\n\n${reason}`,
+          description: `## Human rejection\n\n${reason}\n\n- Rejected report: \`${state.report.path}\`\n- Git commit: \`${state.report.commitSha}\``,
           status: "todo",
           priority: root.priority,
           assigneeAgentId,
           originKind: "plugin:local.operation-control:delivery-remediation",
           originId: `${root.id}:human-rejection:${state.rejectionCount + 1}`,
-          actor: { actorUserId: userId },
+          actor: { actorAgentId: agentId, actorRunId: runId },
         });
         await ctx.state.set(deliveryNodeKey(remediation.id), {
           rootTaskId: root.id,
@@ -654,8 +808,25 @@ export function createOperationPlugin() {
           milestoneId: state.milestoneId,
           parentId: root.id,
         } satisfies DeliveryNode);
-        await ctx.issues.update(root.id, { status: "in_progress" }, companyId, { actorUserId: userId });
-        await saveDeliveryState(companyId, { ...state, phase: "executing", rejectionCount: state.rejectionCount + 1 });
+        await ctx.issues.update(
+          root.id,
+          { status: "in_progress", assigneeAgentId: rootOwnerAgentId },
+          companyId,
+          { actorAgentId: agentId, actorRunId: runId },
+        );
+        await saveDeliveryState(companyId, {
+          ...state,
+          report: null,
+          phase: "executing",
+          rejectionCount: state.rejectionCount + 1,
+        });
+        await ctx.issues.requestWakeup(remediation.id, companyId, {
+          reason: "Board requested Milestone remediation.",
+          contextSource: "operation-control:milestone-rejection",
+          idempotencyKey: `${remediation.id}:milestone-rejection`,
+          actorAgentId: agentId,
+          actorRunId: runId,
+        });
         return { decision, remediationIssueId: remediation.id, phase: "executing" };
       };
 
@@ -701,7 +872,7 @@ export function createOperationPlugin() {
         if (!isDeliveryState(marker)) return;
         const goal = await ctx.goals.get(goalId, event.companyId);
         if (!goal) return;
-        if (marker.phase !== "awaiting_human_confirmation" && goal.status === "achieved") {
+        if (marker.phase !== "completed" && goal.status === "achieved") {
           await ctx.goals.update(goalId, { status: marker.phase === "milestone_pending" ? "planned" : "active" }, event.companyId);
           ctx.logger.warn("Reverted an out-of-band Milestone completion", { companyId: event.companyId, goalId });
         }
@@ -741,11 +912,6 @@ export function createOperationPlugin() {
         const companyId = readCompanyId(params, context.companyId);
         const agentId = actorAgentId(context);
         return serialized(companyId, () => reviewNode(companyId, agentId, context.actor.runId, params));
-      });
-
-      ctx.actions.register("review-milestone", async (params, context) => {
-        const companyId = readCompanyId(params, context.companyId);
-        return serialized(companyId, () => reviewMilestone(companyId, actorUser(context), params));
       });
 
       ctx.tools.register(
@@ -847,6 +1013,62 @@ export function createOperationPlugin() {
         },
         async (params, runContext: ToolRunContext) => {
           const result = await serialized(runContext.companyId, () => reviewNode(
+            runContext.companyId,
+            runContext.agentId,
+            runContext.runId,
+            params as Record<string, unknown>,
+          ));
+          return { content: JSON.stringify(result), data: result };
+        },
+      );
+
+      ctx.tools.register(
+        "request-milestone-review",
+        {
+          displayName: "Request Milestone Review",
+          description: "Send a Git-backed Milestone completion report to the Board for confirmation.",
+          parametersSchema: {
+            type: "object",
+            properties: {
+              goalId: { type: "string" },
+              reportPath: { type: "string" },
+              commitSha: { type: "string" },
+              summary: { type: "string" },
+              evidence: { type: "string" },
+            },
+            required: ["goalId", "reportPath", "commitSha", "summary"],
+          },
+        },
+        async (params, runContext: ToolRunContext) => {
+          const result = await serialized(runContext.companyId, () => requestMilestoneReview(
+            runContext.companyId,
+            runContext.agentId,
+            runContext.runId,
+            params as Record<string, unknown>,
+          ));
+          return { content: JSON.stringify(result), data: result };
+        },
+      );
+
+      ctx.tools.register(
+        "record-milestone-confirmation",
+        {
+          displayName: "Record Milestone Confirmation",
+          description: "Apply the Board response from a Paperclip Milestone confirmation continuation.",
+          parametersSchema: {
+            type: "object",
+            properties: {
+              goalId: { type: "string" },
+              interactionId: { type: "string" },
+              decision: { type: "string", enum: ["accepted", "rejected"] },
+              reason: { type: "string" },
+              assigneeAgentId: { type: "string" },
+            },
+            required: ["goalId", "interactionId", "decision"],
+          },
+        },
+        async (params, runContext: ToolRunContext) => {
+          const result = await serialized(runContext.companyId, () => recordMilestoneConfirmation(
             runContext.companyId,
             runContext.agentId,
             runContext.runId,

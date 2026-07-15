@@ -22,9 +22,11 @@ const manifest = {
     "issues.read",
     "issues.create",
     "issues.update",
+    "issues.wakeup",
     "issue.relations.read",
     "issue.subtree.read",
     "issue.comments.create",
+    "issue.interactions.create",
     "issue.documents.write",
     "ui.dashboardWidget.register"
   ],
@@ -101,6 +103,38 @@ const manifest = {
           assigneeAgentId: { type: "string" }
         },
         required: ["issueId", "decision"]
+      }
+    },
+    {
+      name: "request-milestone-review",
+      displayName: "Request Milestone Review",
+      description: "Send a Git-backed Milestone completion report to the Board for confirmation.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          goalId: { type: "string" },
+          reportPath: { type: "string" },
+          commitSha: { type: "string" },
+          summary: { type: "string" },
+          evidence: { type: "string" }
+        },
+        required: ["goalId", "reportPath", "commitSha", "summary"]
+      }
+    },
+    {
+      name: "record-milestone-confirmation",
+      displayName: "Record Milestone Confirmation",
+      description: "Apply the Board response from a Paperclip Milestone confirmation continuation.",
+      parametersSchema: {
+        type: "object",
+        properties: {
+          goalId: { type: "string" },
+          interactionId: { type: "string" },
+          decision: { type: "string", enum: ["accepted", "rejected"] },
+          reason: { type: "string" },
+          assigneeAgentId: { type: "string" }
+        },
+        required: ["goalId", "interactionId", "decision"]
       }
     }
   ],

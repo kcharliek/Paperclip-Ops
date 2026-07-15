@@ -150,23 +150,57 @@ await assert.rejects(
 );
 await harness.ctx.issues.update(childOne.id, { status: "done" }, companyId, { actorAgentId: manualPauseId });
 await harness.ctx.issues.update(childTwo.id, { status: "done" }, companyId, { actorAgentId: manualPauseId });
-await harness.performAction("review-node", {
+const rootReview = await harness.performAction("review-node", {
   issueId: root.id,
   decision: "approved",
 }, { companyId, actor: builder });
+assert.equal(rootReview.next, "milestone_report");
 let delivery = await harness.getData("delivery-control", { companyId, goalId: goal.id });
-assert.equal(delivery.state.phase, "awaiting_human_confirmation");
+assert.equal(delivery.state.phase, "executing");
 assert.equal(delivery.root.id, root.id);
+assert.equal(delivery.root.status, "in_review");
+assert.equal(delivery.root.assigneeAgentId, ownerId);
 
-const remediation = await harness.performAction("review-milestone", {
+const reportPath = `docs/milestones/${milestone.id}.md`;
+await assert.rejects(
+  () => harness.executeTool("request-milestone-review", {
+    goalId: goal.id,
+    reportPath,
+    commitSha: "abc123",
+    summary: "Ready for review.",
+  }, { companyId, agentId: ownerId, runId: "run-report" }),
+  /full Git commit SHA/,
+);
+const firstRequest = await harness.executeTool("request-milestone-review", {
+  goalId: goal.id,
+  reportPath,
+  commitSha: "a".repeat(40),
+  summary: "First completion report.",
+  evidence: "All scoped checks passed.",
+}, { companyId, agentId: ownerId, runId: "run-report" });
+assert.equal(firstRequest.data.phase, "awaiting_human_confirmation");
+assert.equal(firstRequest.data.report.path, reportPath);
+assert.equal(firstRequest.data.report.commitSha, "a".repeat(40));
+await assert.rejects(
+  harness.executeTool("record-milestone-confirmation", {
+    goalId: goal.id,
+    decision: "accepted",
+    interactionId: "interaction-from-another-request",
+  }, { companyId, agentId: ownerId, runId: "run-mismatched-confirmation" }),
+  /does not match/,
+);
+
+const remediation = (await harness.executeTool("record-milestone-confirmation", {
   goalId: goal.id,
   decision: "rejected",
+  interactionId: firstRequest.data.interactionId,
   reason: "Human acceptance evidence is incomplete.",
   assigneeAgentId: manualPauseId,
-}, { companyId, actor: human });
+}, { companyId, agentId: ownerId, runId: "run-rejection" })).data;
 assert.equal(remediation.phase, "executing");
 const rejectedRoot = await harness.ctx.issues.get(root.id, companyId);
 assert.equal(rejectedRoot.status, "in_progress");
+assert.equal(rejectedRoot.assigneeAgentId, workerId);
 const remediationIssue = await harness.ctx.issues.get(remediation.remediationIssueId, companyId);
 assert.equal(remediationIssue.parentId, root.id);
 
@@ -203,12 +237,20 @@ await harness.performAction("review-node", {
   issueId: root.id,
   decision: "approved",
 }, { companyId, actor: builder });
-await harness.performAction("review-milestone", {
+const secondRequest = await harness.executeTool("request-milestone-review", {
   goalId: goal.id,
-  decision: "approved",
-}, { companyId, actor: human });
+  reportPath,
+  commitSha: "b".repeat(40),
+  summary: "Remediated completion report.",
+}, { companyId, agentId: ownerId, runId: "run-report-2" });
+await harness.executeTool("record-milestone-confirmation", {
+  goalId: goal.id,
+  interactionId: secondRequest.data.interactionId,
+  decision: "accepted",
+}, { companyId, agentId: ownerId, runId: "run-acceptance" });
 delivery = await harness.getData("delivery-control", { companyId, goalId: goal.id });
 assert.equal(delivery.state.phase, "completed");
 assert.equal(delivery.milestone.status, "achieved");
+assert.equal(delivery.root.status, "done");
 
 console.log("operation-control: ok");

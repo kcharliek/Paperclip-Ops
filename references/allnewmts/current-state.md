@@ -65,6 +65,7 @@ isolated workspace는 정책상 선택할 수 있지만 현재 AllNewMTS Git 저
 | Plugin key | `local.operation-control` |
 | 버전 / 상태 | `0.1.0` / ready, healthy |
 | Company mode | `normal` |
+| Milestone 완료 gate | Git 보고서 + Paperclip `request_confirmation` |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
 

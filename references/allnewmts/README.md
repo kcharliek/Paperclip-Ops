@@ -81,6 +81,8 @@ shared workspace writer는 동시에 한 명만 허용한다. isolated workspace
 - Prototyper backlog는 Product Steward review, Builder backlog는 Sweeper review를 거친다.
 - Goal·고위험 전환은 Board approval stage를 추가한다.
 - Prototyper 결과는 keep 또는 kill하며 keep된 결과만 Builder로 넘긴다.
+- Root 담당자는 `docs/milestones/<milestone-id>.md`를 commit하고 Product Steward는 full commit SHA를 확인한다.
+- Product Steward는 Git 보고서를 대상으로 Paperclip `request_confirmation`을 보내고 Board 응답 뒤에만 Milestone을 완료한다.
 - shared workspace의 제품 writer는 한 번에 한 명이다.
 
 범용 상태 전이와 Task contract는 [Delivery Lifecycle](../../blueprint/delivery-lifecycle.md)에 정의한다.
