@@ -76,9 +76,12 @@ shared workspace writer는 동시에 한 명만 허용한다. isolated workspace
 
 ## Delivery 규칙
 
+- 사람의 요청은 Goal로 등록하고 Milestone 확인 과정에서 필수 작업은 `todo`, 선택 작업은 `backlog`로 나눈다.
+- Backlog는 active Root/Node의 child가 아니며 Product Steward만 `todo`로 승격한다.
+- Sweeper는 `Backlog Sweep` Routine에서 명백한 중복, 이미 반영된 결과 또는 충족된 폐기 조건만 근거와 함께 `cancelled`로 바꾼다.
 - Task에는 `role:prototyper`, `role:builder`, `role:sweeper`, `role:grower`, `role:maintainer` 중 정확히 하나를 붙인다.
 - Product Steward가 Goal, blocker와 delivery contract를 확인해 해당 역할 Agent 한 명에게 배정한다.
-- Prototyper backlog는 Product Steward review, Builder backlog는 Sweeper review를 거친다.
+- Prototyper 결과는 Product Steward review, Builder 결과는 Sweeper review를 거친다.
 - Goal·고위험 전환은 Board approval stage를 추가한다.
 - Prototyper 결과는 keep 또는 kill하며 keep된 결과만 Builder로 넘긴다.
 - Root 담당자는 `docs/milestones/<milestone-id>.md`를 commit하고 Product Steward는 full commit SHA를 확인한다.
@@ -91,7 +94,7 @@ shared workspace writer는 동시에 한 명만 허용한다. isolated workspace
 
 | 항목 | 현재값 |
 |---|---|
-| Routine | 없음 |
+| Routine | `Backlog Sweep`, active, Sweeper 담당, 수동/API 실행, schedule 없음 |
 | Pipeline | 없음 |
 | Operation Control | `local.operation-control` 0.1.0, ready/healthy |
 | Maintenance owner 관례 | Maintainer |

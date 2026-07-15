@@ -318,6 +318,7 @@ export function createOperationPlugin() {
         const tracked = await getIssueDelivery(companyId, parent);
         if (!tracked || tracked.state.phase === "completed") throw new Error("Parent is not in an active delivery workflow");
         if (parent.assigneeAgentId !== actorId) throw new Error("Only the parent Task owner may decompose it");
+        if (parent.status === "backlog") throw new Error("Backlog Task must be promoted to todo before decomposition");
         if (parent.status === "done" || parent.status === "cancelled") throw new Error("A terminal parent cannot receive child Tasks");
 
         const assigneeAgentId = stringParam(params, "assigneeAgentId");
@@ -354,7 +355,7 @@ export function createOperationPlugin() {
           milestoneId: tracked.node.milestoneId,
           parentId: parent.id,
         } satisfies DeliveryNode);
-        if (parent.status === "todo" || parent.status === "backlog") {
+        if (parent.status === "todo") {
           await ctx.issues.update(parent.id, { status: "in_progress" }, companyId, { actorAgentId: actorId, actorRunId });
         }
         return child;

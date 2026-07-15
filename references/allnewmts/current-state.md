@@ -44,9 +44,11 @@ Product Steward
 - Issue workspace override: 허용
 - Plus와 `mts_screen`: 읽기 전용 원본
 - Role label: 5개 모두 생성됨
-- Prototyper backlog: Product Steward review stage
-- Builder backlog: Sweeper review stage
+- Prototyper 결과: Product Steward review stage
+- Builder 결과: Sweeper review stage
 - `ALL-25`: `local-board` approval stage, 현재 선행 Task 때문에 blocked
+- 사람의 요청은 Goal, Milestone 필수 작업은 `todo`, 선택 작업은 active Task tree 밖의 `backlog`
+- Backlog `todo` 승격은 Product Steward, 근거가 있는 취소는 Sweeper
 
 isolated workspace는 정책상 선택할 수 있지만 현재 AllNewMTS Git 저장소에 `HEAD`가 없어 실행 불가하다.
 
@@ -68,5 +70,6 @@ isolated workspace는 정책상 선택할 수 있지만 현재 AllNewMTS Git 저
 | Milestone 완료 gate | Git 보고서 + Paperclip `request_confirmation` |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
+| Backlog Sweep Routine | active, Sweeper 담당, 수동/API 실행, schedule 없음 |
 
-Routine과 Pipeline은 아직 없다. 남은 운영 차이는 [drift](drift.md)에 기록한다.
+Pipeline은 아직 없다. 남은 운영 차이는 [drift](drift.md)에 기록한다.

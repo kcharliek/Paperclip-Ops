@@ -3,7 +3,7 @@
 사람은 방향과 인수만 결정하고, Agent는 승인된 Milestone을 실행 가능한 Task tree로 만든다. 승인 경계는 두 곳뿐이다.
 
 1. 사람은 Goal을 등록한다.
-2. Product Steward가 Goal을 바탕으로 Milestone 초안을 만들고 사람에게 확인을 요청한다.
+2. Product Steward가 Goal을 바탕으로 Milestone 초안을 만들고 필수 범위와 선택 Backlog를 나눠 사람에게 확인을 요청한다.
 3. 사람이 Milestone을 확인하면 Agent가 Root Task를 만들고 실행을 시작한다.
 4. Leaf Task가 끝나면 상위 Node Task 담당자가 확인한다.
 5. Root Task 담당자가 완료 근거를 `docs/milestones/<milestone-id>.md`에 기록해 Git에 commit한다.
@@ -15,10 +15,23 @@
 |---|---|---|
 | Goal | `active` → `completed` | 사람만 등록·완료 확정 |
 | Milestone | `draft` → `awaiting_confirmation` → `confirmed` → `in_progress` → `awaiting_confirmation` → `completed` | Product Steward가 제안·진행, 사람만 확인·거절 |
+| Backlog Task | `backlog` → `todo` 또는 `cancelled` | Product Steward만 필수 범위로 승격, Sweeper는 근거가 있는 항목만 취소 |
 | Node Task | `todo` → `in_progress` → `in_review` → `done` | 담당 Agent가 실행·제출, 상위 담당자가 확인 |
 | Leaf Task | `todo` → `in_progress` → `done` | 실행 Agent가 실행, 상위 Node 담당자가 확인 |
 
 `reject`는 완료된 결과를 지우거나 무작정 재실행하는 상태가 아니다. 거절 사유와 기대 결과를 기록하고, 실패한 Node 아래에 보완 child Task를 추가한 뒤 같은 Node를 다시 review한다.
+
+사람의 요청은 Task가 아니라 Goal로 등록한다. Milestone 초안에서 Exit gate 달성에 필요한 작업은 확인 뒤 `todo` Task tree로 만들고, 하면 좋지만 없어도 완료 가능한 작업은 `backlog`로 기록한다. Backlog는 active Root/Node의 child가 아니며 Milestone 완료를 막지 않는다.
+
+Product Steward만 Backlog를 `todo`로 승격하고 적절한 부모, Role, 담당자와 Delivery Contract를 붙인다. 확인된 Exit gate 안의 누락 작업은 바로 승격할 수 있지만 범위나 Exit gate가 바뀌면 Milestone을 다시 확인한다. Sweeper는 Backlog를 `todo`로 승격하거나 Goal·Milestone을 바꾸지 않는다.
+
+## Backlog 정리
+
+- Backlog에는 Goal, 기대 가치, 선택인 이유와 폐기 조건을 기록한다.
+- `Backlog Sweep` Routine은 관련 Backlog가 있을 때 Milestone 확인 전과 완료 후 Product Steward가 실행하고 Sweeper에게 정리 Task를 배정한다.
+- Sweeper는 한 번에 최대 10개를 확인하고 명백한 중복, 이미 반영된 결과, 충족된 폐기 조건만 근거를 댓글로 남긴 뒤 `cancelled`로 바꾼다.
+- 기존 Task처럼 선택 여부나 폐기 조건이 불명확한 Backlog는 취소하지 않고 Product Steward에게 분류를 요청한다.
+- Routine이 만든 정리 Task는 active Root/Node의 child로 두지 않고 제품 workspace를 수정하지 않는다.
 
 ## Task tree 규칙
 
@@ -68,6 +81,8 @@ Milestone 최종 확인이 거절되면 Product Steward가 거절 사유를 Root
 | 워크플로우 의미 | Paperclip 표현 |
 |---|---|
 | Goal / Milestone 연결 | Task의 기존 `goalId`, `projectId`와 Milestone 기록 |
+| 선택 작업 후보 | active Task tree 밖의 `backlog`, `goalId`와 `projectId`로만 연결 |
+| 필수 실행 범위 | 확인된 Milestone 아래의 `todo` Task tree |
 | 부모-자식 | `POST /api/issues/{parentId}/children` |
 | 부모 완료 대기 | `blockParentUntilDone: true` |
 | sibling 순서 | `blockedByIssueIds` |
@@ -75,6 +90,7 @@ Milestone 최종 확인이 거절되면 Product Steward가 거절 사유를 Root
 | Node/Root review | 부모 Task의 `executionPolicy` `review` stage |
 | 인간 Milestone 확인 | Root Task의 `request_confirmation`, 대상 revision은 보고서 Git commit SHA |
 | 거절 재진입 | 기존 child 재오픈 대신 보완 child 생성 |
+| Backlog 정리 | Sweeper에게 배정된 on-demand `Backlog Sweep` Routine run |
 
 ## Milestone 완료 보고
 
@@ -94,7 +110,18 @@ Root 담당 Agent는 Root review 전에 제품 저장소의 `docs/milestones/<mi
 
 Git Markdown이 원본이다. Paperclip confirm request는 같은 내용을 별도 편집하지 않고 요약, 파일 경로와 full commit SHA를 표시한다. Product Steward는 보고서를 직접 작성하거나 제품 workspace를 수정하지 않고 commit에 포함됐는지만 확인한다. Confirm이 거절되면 기존 보고서를 덮어쓰지 않고 보완 commit을 만든 뒤 새 SHA로 다시 요청한다.
 
-Task description에는 최소한 다음을 기록한다.
+Backlog description에는 최소한 다음을 기록한다.
+
+```markdown
+## Backlog Candidate
+
+- Goal: <goal id>
+- Value: <기대 가치>
+- Why optional: <현재 Milestone에 필수가 아닌 이유>
+- Discard when: <취소할 수 있는 객관적 조건>
+```
+
+`todo` Task description에는 최소한 다음을 기록한다.
 
 ```markdown
 ## Delivery Contract

@@ -128,6 +128,16 @@ const root = await harness.performAction("create-root-task", {
   title: "Delivery root",
   assigneeAgentId: workerId,
 }, { companyId, actor: steward });
+await harness.ctx.issues.update(root.id, { status: "backlog" }, companyId, { actorAgentId: ownerId });
+await assert.rejects(
+  () => harness.performAction("create-child-task", {
+    parentIssueId: root.id,
+    title: "Backlog child",
+    assigneeAgentId: manualPauseId,
+  }, { companyId, actor: builder }),
+  /promoted to todo/,
+);
+await harness.ctx.issues.update(root.id, { status: "todo" }, companyId, { actorAgentId: ownerId });
 const childOne = await harness.performAction("create-child-task", {
   parentIssueId: root.id,
   title: "Child one",

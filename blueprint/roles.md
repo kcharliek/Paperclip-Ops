@@ -20,7 +20,7 @@ Board (Human owner)
 | Product Steward | `ceo` | 인간 요청 해석, Goal·Milestone, Role 배치, keep/kill과 단계 전환 | Task 배정, 승인된 Agent 채용 요청, Skill 관리 |
 | Prototyper | `researcher` | 여러 해법 탐색, Prototype와 비교 근거 | 격리 workspace 또는 Artifact 쓰기 |
 | Builder | `engineer` | 선택된 해법의 제품화와 테스트 | 제품 workspace 쓰기 |
-| Sweeper | `qa` | UI·코드·기능 단순화, 제거, 성능 개선 | 제품 workspace 쓰기와 삭제 |
+| Sweeper | `qa` | UI·코드·기능 단순화, 제거, 성능 개선과 선택 Backlog 정리 | 제품 workspace 쓰기와 삭제, 근거가 있는 Backlog 취소 |
 | Grower | `pm` | 사용 근거와 eval 기반 반복 개선 | 근거 읽기, 승인된 실험 쓰기 |
 | Maintainer | `devops` | 보안, 신뢰성, 성능, 비용, 장애와 유지보수 | 제품 workspace와 운영 근거 쓰기, Maintenance owner |
 
@@ -28,7 +28,8 @@ Board (Human owner)
 
 - 모든 실행 Role은 Product Steward 한 명에게 직접 보고한다. Paperclip의 `reportsTo`는 하나만 허용한다.
 - Product Steward는 Root Task와 Agent 간 배정을 담당한다. Node 담당 Agent는 자신이 맡은 Node 아래의 child를 분해할 수 있지만 Goal·Milestone·형제 범위를 바꾸거나 다른 Root를 만들 수 없다. Paperclip 권한이 없으면 Product Steward가 분해안을 받아 child 생성을 대행한다.
-- 각 Task에는 delivery Role label 하나와 [Delivery 계약](delivery-lifecycle.md)을 기록한다.
+- 사람의 요청은 Goal로 등록한다. Product Steward는 Milestone의 필수 작업만 `todo`로 만들고 선택 작업은 active Task tree 밖의 `backlog`로 둔다. Sweeper는 근거가 있는 Backlog를 취소할 수 있지만 `todo` 승격은 Product Steward만 수행한다.
+- `todo` Task에는 delivery Role label 하나와 [Delivery 계약](delivery-lifecycle.md)을 기록한다. Backlog에는 Goal, 기대 가치, 선택인 이유와 폐기 조건만 기록한다.
 - Leaf 완료는 상위 Node 담당자가 확인하고, Node와 Root 완료는 부모의 review stage를 통과해야 한다. 인간은 Milestone만 확인·거절한다.
 - 구현 결과는 Paperclip `executionPolicy`의 review stage를 거친다. 작성자와 reviewer는 달라야 한다.
 - 고위험 변경은 review 뒤 Board approval stage를 추가한다.
