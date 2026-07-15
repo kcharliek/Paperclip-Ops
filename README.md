@@ -19,6 +19,7 @@ PaperClip-Ops/
 - [운영 상태](docs/architecture.md): `normal`/`holding`/`maintenance`
 - [AllNewMTS Reference](references/allnewmts/README.md): 현재 서버 설정과 원본 스냅샷
 - [Operation Control](plugins/operation-control/README.md): `drain`/`immediate` 정지 플러그인
+- [Ops System Test](tests/system/README.md): 실제 OpenCode Agent를 사용하는 black-box 운영 계약 테스트
 
 ## 플러그인 개발
 
