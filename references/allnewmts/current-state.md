@@ -18,20 +18,22 @@
 ## 조직
 
 ```text
-Manager (CEO)
-├── Builder (Engineer)
-├── Researcher (Spec Analyst)
-└── Tech Manager (CTO)
+Strategy Agent (CEO)
+└── Manager (PM)
+    ├── Builder (Engineer)
+    ├── Researcher (Spec Analyst)
+    └── Tech Manager (CTO)
 ```
 
 | Agent | 주요 책임 | Task 배정 | Agent 생성 | 현재 상태 |
 |---|---|---:|---:|---|
-| Manager | 신규 Task 접수, 배정, Goal과 산출물 관리 | 가능 | 가능 | idle |
+| Strategy Agent | 인간 요청 해석, Goal·Milestone 관리, Manager 인계 | Manager에게만 가능 | 불가 | idle |
+| Manager | 실행 Task 접수, 분해, 배정과 산출물 review | 가능 | 가능 | idle |
 | Builder | Expo 기반 FormDe 런타임 구현 | 불가 | 불가 | idle |
 | Researcher | 원본 분석, 호환성 스펙과 Fixture 작성 | 불가 | 불가 | idle |
 | Tech Manager | 기술 방향, 리뷰, 품질 게이트와 Maintenance owner | 가능 | 불가 | idle |
 
-모든 Agent는 `codex_local`, `gpt-5.5`를 사용한다. Manager, Builder, Researcher의 heartbeat는 비활성이고 on-demand 실행만 허용한다. Tech Manager 역시 예약 heartbeat는 구성되어 있지 않다.
+모든 Agent는 `codex_local`, `gpt-5.5`를 사용한다. Strategy Agent, Manager, Builder, Researcher의 heartbeat는 비활성이고 on-demand 실행만 허용한다. Tech Manager 역시 예약 heartbeat는 구성되어 있지 않다.
 
 ## 프로젝트
 
@@ -45,6 +47,7 @@ Manager (CEO)
 
 ## Goal 구조
 
+- 네 Team Goal의 owner는 Strategy Agent이며 이 Goal들을 Milestone으로 관리한다.
 - Company Goal: SmartFormDe 시스템을 React Native Expo 기반으로 Migration
   - 개발 기반과 FormDe 호환성 계약 확보 — active
   - 대표 XMS E2E 호환 입증 — planned
@@ -72,5 +75,6 @@ Manager (CEO)
 - Tech Manager의 현재 capability는 제품 코드와 원본 저장소를 직접 수정하지 않도록 되어 있다.
 - Tech Manager는 `canCreateAgents: false`라 Maintenance 중 직접 Agent를 채용할 수 없다.
 - 정기적인 기술 부채 점검 routine 또는 heartbeat가 아직 없다.
+- Tech Manager instructions에는 Strategy Agent 도입 전 Manager의 Goal 전환 책임이 남아 있다.
 
-따라서 현재 Tech Manager는 Task 조정과 리뷰 중심으로 동작한다. 직접 코드 개선, Agent 채용, 주기 점검을 맡기려면 각각 instructions/permission/routine 변경이 필요하다.
+따라서 현재 Tech Manager는 Task 조정과 리뷰 중심으로 동작한다. 직접 코드 개선, Agent 채용, 주기 점검과 Strategy Agent 경계를 맞추려면 각각 instructions/permission/routine 변경이 필요하다.

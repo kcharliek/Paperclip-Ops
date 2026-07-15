@@ -8,9 +8,9 @@
 AI Company Blueprint
 ├── Charter: 목적과 완료 조건
 ├── Governance: Board, 승인, 예산
-├── Organization: Role, 보고선, 권한
+├── Organization: Board, Strategy Agent, Manager, 실행 Role, 보고선, 권한
 ├── Knowledge: Company Skill
-├── Delivery: Goal, Project, Task, review
+├── Delivery: Company Goal, Team Goal Milestone, Project, Task, review
 ├── Runtime: model, environment, workspace, concurrency
 └── Operations: 상태, maintenance, routine, plugin
 ```

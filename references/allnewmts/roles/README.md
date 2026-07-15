@@ -16,7 +16,8 @@
 
 | Role | ID | reportsTo | Task 배정 | Agent 생성 | Skill 생성 | heartbeat |
 |---|---|---|---:|---:|---:|---|
-| Manager | `d96accca-eb75-4b55-8a69-9608fe1a93a2` | Board | 가능 | 가능 | 가능 | on-demand, concurrency 1 |
+| Strategy Agent | `6b6296b0-c22d-4a63-a578-ef1041ec7541` | Board | Manager에게만 가능 | 불가 | 불가 | on-demand, concurrency 1 |
+| Manager | `d96accca-eb75-4b55-8a69-9608fe1a93a2` | Strategy Agent | 가능 | 가능 | 가능 | on-demand, concurrency 1 |
 | Builder | `0c82b32e-682c-4e8e-a53e-5790eaeadcbf` | Manager | 불가 | 불가 | 불가 | on-demand, concurrency 1 |
 | Researcher | `e154b480-a914-4b1f-b40b-209ee332760d` | Manager | 불가 | 불가 | 불가 | on-demand, concurrency 1 |
 | Tech Manager | `56cd8c39-6c19-4bf0-a6bb-8390e7b1bcd1` | Manager | 가능 | 불가 | 가능 | 예약 없음, concurrency 20 |
@@ -25,16 +26,18 @@
 
 | Role | 수행 | 수행하지 않음 |
 |---|---|---|
-| Manager | Task triage, Goal 정렬, 배정, review, 단계 전환 | 제품 코드, 조사, Fixture 작성 |
+| Strategy Agent | 인간 요청 해석, Goal 정렬, Team Goal Milestone 관리, Manager 인계 | Task 세부 분해, 실행 Agent 배정, 제품 작업 |
+| Manager | 실행 Task triage, 분해, 배정, review, 완료 근거 보고 | Goal 상태 전환, 제품 코드, 조사, Fixture 작성 |
 | Builder | 승인된 계약 기반 런타임 코드와 테스트 | 미할당 Task, 스펙 추측, 다른 Agent 배정 |
 | Researcher | 원본 근거 조사, 스펙, 인벤토리, Fixture | 제품 런타임 구현, 근거 없는 결정 |
-| Tech Manager | 설정상 Task 배정과 Skill 생성 가능 | 현재 instructions상 Manager와 동일하며 기술 부채 전용 책임이 없음 |
+| Tech Manager | 설정상 Task 배정과 Skill 생성 가능 | 현재 instructions에 이전 Manager 역할이 남아 있으며 기술 부채 전용 책임이 없음 |
 
 ## 실제 Instructions
 
+- [Strategy Agent](strategy/AGENTS.md)
 - [Manager](manager/AGENTS.md)
 - [Builder](builder/AGENTS.md)
 - [Researcher](researcher/AGENTS.md)
 - [Tech Manager](tech-manager/AGENTS.md)
 
-Tech Manager instructions는 현재 Manager instructions의 복사본이다. 문서 오류가 아니라 3100 서버의 실제 상태이며 가장 먼저 해결할 Role drift다.
+Tech Manager instructions는 Strategy Agent 도입 전 Manager instructions의 복사본이다. 문서 오류가 아니라 3100 서버의 실제 상태이며 가장 먼저 해결할 Role drift다.
