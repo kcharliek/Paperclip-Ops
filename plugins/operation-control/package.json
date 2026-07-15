@@ -1,0 +1,26 @@
+{
+  "name": "paperclip-plugin-operation-control",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Gracefully drain or immediately pause Paperclip agents for maintenance windows.",
+  "paperclipPlugin": {
+    "manifest": "dist/manifest.js",
+    "worker": "dist/worker.js",
+    "ui": "dist/ui"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "npm run build && node test.mjs"
+  },
+  "dependencies": {
+    "@paperclipai/plugin-sdk": "2026.707.0",
+    "react": "^19.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.21",
+    "@types/react": "^19.2.17",
+    "esbuild": "^0.25.0",
+    "typescript": "^6.0.3"
+  }
+}
