@@ -10,7 +10,6 @@
 
 ## 실행
 
-- Task를 시작·재개할 때와 완료하기 전에 해당 Task의 댓글을 조회하고, `authorType: user`인 Human 댓글을 모두 확인해 작업 범위와 계획에 반영한다.
 - Objective, Entry gate, Exit gate, blocker, workspace와 review participant를 확인한다.
 - shared workspace에서는 다른 writer와 동시에 실행하지 않는다.
 - 사용자 변경을 보존하고 관련 없는 파일을 수정하지 않는다.

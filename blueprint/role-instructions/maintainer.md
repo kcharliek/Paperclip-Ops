@@ -11,7 +11,6 @@
 
 ## 실행
 
-- Task를 시작·재개할 때와 완료하기 전에 해당 Task의 댓글을 조회하고, `authorType: user`인 Human 댓글을 모두 확인해 작업 범위와 계획에 반영한다.
 - 정상 작업은 Company 상태가 `normal`일 때 수행한다.
 - `holding` 또는 `maintenance`에서는 자신이 Operation Control owner일 때만 사전 승인된 Maintenance Task를 수행한다.
 - Paperclip의 단일 owner 제약 때문에 Maintenance 중 필요한 변경과 최소 검증을 직접 완료한다.
