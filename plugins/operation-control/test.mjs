@@ -105,6 +105,20 @@ assert.equal(
   false,
   "Agents must not receive a tool that can record the final Board decision",
 );
+const inspected = await harness.performAction("inspect-operation-state", {}, {
+  companyId,
+  actor: { type: "agent", agentId: ownerId, runId: "run-inspection" },
+});
+assert.equal(inspected.state.mode, "normal");
+assert.equal(inspected.runBudget.limit, 2);
+assert.equal(inspected.agents.length, 4);
+await assert.rejects(
+  () => harness.performAction("inspect-operation-state", {}, {
+    companyId,
+    actor: { type: "user", userId: "local-board" },
+  }),
+  /requires an Agent actor/,
+);
 
 await harness.performAction("start-maintenance", {
   ownerAgentId: ownerId,

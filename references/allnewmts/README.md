@@ -94,15 +94,17 @@ shared workspace writer는 동시에 한 명만 허용한다. isolated workspace
 
 | 항목 | 현재값 |
 |---|---|
-| Routine | `Backlog Sweep`, active, Sweeper 담당, 매주 월요일 09:30 KST, `skip_if_active` / `skip_missed` |
+| Routines | `Company Integrity Check`, active, Maintainer 담당, 6시간마다; `Backlog Sweep`, active, Sweeper 담당, 매주 월요일 09:30 KST. 둘 다 `skip_if_active` / `skip_missed` |
 | Pipeline | 없음 |
-| Operation Control | `local.operation-control` 0.5.0, ready/healthy, Company run 20회/시간 hard cap |
+| Operation Control | `local.operation-control` 0.5.2, ready/healthy, Company run 20회/시간 hard cap |
 | Controlled delivery | Company Goal `goal_registered`, plugin Milestone·Root Task 없음 |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
 | Paperclip DB backup | 공식 자동 backup 60분 주기, health `ok`, 수동 archive 무결성 확인; 공개 restore 경로는 없음 |
 
 Operation Control은 Paperclip Agent 한 명만 owner로 유지할 수 있다. Maintenance 중 Maintainer가 사전 승인된 변경과 최소 검증을 수행하고, `normal` 복귀 후 Builder 또는 Sweeper가 독립 검토한다.
+
+`Company Integrity Check`는 read-only 공식 Routine이다. 2026-07-16 수동 실행 `ALL-28`에서 health, backup, operation mode·run budget, Agent org chain, Routine schedule과 timeout run을 확인해 `integrity: healthy`로 종료했다.
 
 ## 재현 범위
 

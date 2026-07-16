@@ -26,7 +26,7 @@ Board (Human owner)
 | Organization | 표준 Role별 Agent 이름, 수, Paperclip role mapping과 보고선 |
 | Delivery | Company Goal, `team` Goal Milestone, active Milestone 하나, Project와 Role label |
 | Runtime | writable workspace, read-only sources, model, concurrency와 격리 가능 여부 |
-| Operations | Maintainer, `drain` 또는 `immediate`, 시간당 Company run 상한, 신뢰성 기준 |
+| Operations | Maintainer, [Company Integrity Check](company-integrity-routine.md), `drain` 또는 `immediate`, 시간당 Company run 상한, 신뢰성 기준 |
 
 ## 공통 실행 흐름
 
@@ -37,7 +37,7 @@ Board (Human owner)
 5. Prototyper는 여러 후보를 만들고 Product Steward는 keep 또는 kill을 결정한다.
 6. Builder는 선택된 후보를 제품화하고 Task의 review stage를 거친다.
 7. Grower는 사용자·eval 근거로 개선을 요청하고 Sweeper는 불필요한 복잡성을 제거한다.
-8. Maintainer는 운영 가능한 시스템의 보안, 신뢰성, 성능과 비용을 책임진다.
+8. Maintainer는 Company Integrity Check와 승인된 보정으로 운영 가능한 시스템의 보안, 신뢰성, 성능과 비용을 책임진다.
 9. Leaf는 상위 Node 담당자가 확인하고, Root 담당자가 Git Milestone 보고서를 commit한 뒤 Product Steward가 Operation Control의 Board 검토 대기 상태로 제출한다.
 10. Maintainer가 필요하면 [Maintenance](../docs/architecture.md)를 요청하고 단일 owner로 실행한 뒤 `normal`로 복귀한다.
 
@@ -52,6 +52,7 @@ Board (Human owner)
 7. 사람이 Milestone을 확인한 뒤 Root Task, child 분해와 review policy를 연결한다.
 8. workspace의 Git 기준점과 isolated workspace 지원 여부를 확인하고 안전한 실행 policy를 선택한다.
 9. Operation Control의 owner를 Maintainer로 선택하고 `drain → maintenance → normal`을 시험한다.
-10. Leaf 확인 → Node review → Root review → Milestone 사람 확인의 한 사이클을 검증한다.
+10. Company Integrity Check Routine을 연결하고 healthy no-op과 이상 보고를 시험한다.
+11. Leaf 확인 → Node review → Root review → Milestone 사람 확인의 한 사이클을 검증한다.
 
 Company 생성 자동화는 두 번째 Company에서도 같은 입력 구조가 확인된 뒤 추가한다.

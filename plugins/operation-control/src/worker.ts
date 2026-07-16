@@ -1184,8 +1184,7 @@ export function createOperationPlugin() {
       ctx.events.on("issue.updated", (event) => serialized(event.companyId, () => handleIssueUpdated(event)));
       ctx.events.on("goal.updated", (event) => serialized(event.companyId, () => handleGoalUpdated(event)));
 
-      ctx.data.register("operation-control", async (params) => {
-        const companyId = readCompanyId(params);
+      const operationData = async (companyId: string) => {
         const [state, runBudget, agents, artifactIssueId, activeGoalId, companyGoals] = await Promise.all([
           getState(companyId),
           getHourlyRunBudget(companyId),
@@ -1205,6 +1204,15 @@ export function createOperationPlugin() {
           companyGoals: companyGoals.map(({ id, title, status }: Goal) => ({ id, title, status })),
           delivery,
         };
+      };
+
+      ctx.actions.register("inspect-operation-state", async (params, context) => {
+        actorAgentId(context);
+        return operationData(readCompanyId(params, context.companyId));
+      });
+
+      ctx.data.register("operation-control", async (params) => {
+        return operationData(readCompanyId(params));
       });
 
       ctx.actions.register("start-maintenance", async (params, context) => {

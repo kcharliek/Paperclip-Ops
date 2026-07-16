@@ -8,6 +8,7 @@ Company-wide maintenance control and Goal → Milestone → Task delivery gates 
 - Returning to normal resumes only agents paused by this plugin.
 - An optional `maxRunsPerHour` counts Paperclip run-start events per Company. The first run above the limit is cancelled, all Agents enter immediate maintenance, and the Board can reset the window only by resuming normal operation in the dashboard.
 - State is stored per company and mirrored to a `Company Operation State` issue document Artifact.
+- Maintainer Routines can read the same state through the Agent-only `inspect-operation-state` action without receiving pause or resume authority.
 
 ## Delivery control
 

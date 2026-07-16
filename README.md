@@ -50,6 +50,7 @@ PaperClip-Ops/
 - [Delivery Lifecycle](blueprint/delivery-lifecycle.md): Role label, Task Gate, review와 전환
 - [Goal → Milestone → Task Workflow](blueprint/goal-milestone-task-workflow.md): 인간 확인 경계, child 분해와 reject 재진입
 - [Company Skill Blueprint](blueprint/company-skill.md): 도메인 지식을 분리하는 기준
+- [Company Integrity Check](blueprint/company-integrity-routine.md): 주기적 운영 정합성 확인과 보정 경계
 - [설계 지도](docs/design-map.md): Blueprint와 Company Profile의 경계
 - [운영 상태](docs/architecture.md): `normal`/`holding`/`maintenance`
 - [AllNewMTS Reference](references/allnewmts/README.md): 현재 서버 설정과 원본 스냅샷
