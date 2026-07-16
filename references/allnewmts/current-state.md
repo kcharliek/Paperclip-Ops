@@ -73,5 +73,8 @@ AllNewMTS 제품 저장소는 초기 Expo scaffold를 `01fddaf6e4f0b23457c10a442
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
 | Backlog Sweep Routine | active, Sweeper 담당, 수동/API 실행, schedule 없음 |
+| Paperclip DB backup | 공식 자동 backup 활성화, 60분 주기, health `ok`; 보존은 daily 7일·weekly 4주·monthly 1개월 |
+
+2026-07-16 13:55 KST에 공식 `POST /api/instance/database-backups`로 수동 backup을 생성했다. 결과는 5,216,643 bytes, 1.555초였고 gzip 무결성 검사와 Paperclip health 재확인을 통과했다. 공개 API/CLI에는 restore 경로가 없어 복원 drill과 RTO는 아직 검증하지 않았다.
 
 Pipeline은 아직 없다. 남은 운영 차이는 [drift](drift.md)에 기록한다.

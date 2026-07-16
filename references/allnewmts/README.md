@@ -100,6 +100,7 @@ shared workspace writer는 동시에 한 명만 허용한다. isolated workspace
 | Controlled delivery | Company Goal `goal_registered`, plugin Milestone·Root Task 없음 |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
+| Paperclip DB backup | 공식 자동 backup 60분 주기, health `ok`, 수동 archive 무결성 확인; 공개 restore 경로는 없음 |
 
 Operation Control은 Paperclip Agent 한 명만 owner로 유지할 수 있다. Maintenance 중 Maintainer가 사전 승인된 변경과 최소 검증을 수행하고, `normal` 복귀 후 Builder 또는 Sweeper가 독립 검토한다.
 
