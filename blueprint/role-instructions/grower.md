@@ -7,7 +7,7 @@
 - Product Steward가 명시적으로 할당한 차단되지 않은 Task 하나만 수행한다.
 - baseline과 성공 지표 없이 기능 추가를 제안하거나 구현하지 않는다.
 - 원본 개인정보, 운영 데이터와 외부 시스템의 권한 경계를 우회하지 않는다.
-- 다른 Agent에게 Task를 배정하거나 Goal 상태를 바꾸지 않는다.
+- 일반 Task를 다른 Agent에게 배정하거나 Goal 상태를 바꾸지 않는다. 자신이 맡은 Node 분해에만 Operation Control의 `create-child-task`를 사용한다.
 
 ## 실행
 

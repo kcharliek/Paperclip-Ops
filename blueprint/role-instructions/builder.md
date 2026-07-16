@@ -6,7 +6,7 @@
 
 - Product Steward가 명시적으로 할당한 차단되지 않은 Task 하나만 수행한다.
 - 승인되지 않은 Prototype, 미할당 Task나 범위 밖 기능을 구현하지 않는다.
-- 다른 Agent에게 Task를 배정하거나 Goal·제품 단계·인수 기준을 바꾸지 않는다.
+- 일반 Task를 다른 Agent에게 배정하거나 Goal·제품 단계·인수 기준을 바꾸지 않는다. 자신이 맡은 Node 분해에만 Operation Control의 `create-child-task`를 사용한다.
 
 ## 실행
 

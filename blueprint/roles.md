@@ -27,12 +27,11 @@ Board (Human owner)
 ## Paperclip 제약을 반영한 공통 규칙
 
 - 모든 실행 Role은 Product Steward 한 명에게 직접 보고한다. Paperclip의 `reportsTo`는 하나만 허용한다.
-- Product Steward는 Root Task와 Agent 간 배정을 담당한다. Node 담당 Agent는 자신이 맡은 Node 아래의 child를 분해할 수 있지만 Goal·Milestone·형제 범위를 바꾸거나 다른 Root를 만들 수 없다. Paperclip 권한이 없으면 Product Steward가 분해안을 받아 child 생성을 대행한다.
+- Product Steward는 Root Task와 Agent 간 배정을 담당한다. Node 담당 Agent는 Operation Control의 `create-child-task`로 자신이 맡은 Node 아래만 분해할 수 있고 Goal·Milestone·형제 범위를 바꾸거나 다른 Root를 만들 수 없다. 도구를 사용할 수 없으면 Product Steward가 분해안을 받아 같은 제한 도구로 child 생성을 대행한다.
 - 사람의 요청은 Goal로 등록한다. Product Steward는 Milestone의 필수 작업만 `todo`로 만들고 선택 작업은 active Task tree 밖의 `backlog`로 둔다. Sweeper는 근거가 있는 Backlog를 취소할 수 있지만 `todo` 승격은 Product Steward만 수행한다.
 - `todo` Task에는 delivery Role label 하나와 [Delivery 계약](delivery-lifecycle.md)을 기록한다. Backlog에는 Goal, 기대 가치, 선택인 이유와 폐기 조건만 기록한다.
-- Leaf 완료는 상위 Node 담당자가 확인하고, Node와 Root 완료는 부모의 review stage를 통과해야 한다. 인간은 Milestone만 확인·거절한다.
-- 구현 결과는 Paperclip `executionPolicy`의 review stage를 거친다. 작성자와 reviewer는 달라야 한다.
-- 고위험 변경은 review 뒤 Board approval stage를 추가한다.
+- Leaf 완료는 상위 Node 담당자가 확인하고, Node와 Root 완료는 Operation Control의 `review-node`를 통과해야 한다. 작성자와 reviewer는 달라야 하며 인간은 Milestone만 확인·거절한다.
+- Company가 native `executionPolicy`를 별도로 적용한 고위험 변경은 review 뒤 Board approval stage를 추가한다.
 - shared workspace의 writer 동시 실행은 1이다. 독립 Git history와 isolated workspace가 확인된 경우에만 병렬 writer를 늘린다.
 - isolated workspace를 사용할 수 없으면 Prototyper는 shared 제품 workspace를 수정하지 않고 Issue Document, attachment 또는 work product로 결과를 남긴다.
 - Role Agent 수는 1..N이지만 같은 writable workspace를 공유하는 실행은 직렬화한다.

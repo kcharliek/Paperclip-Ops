@@ -3,8 +3,8 @@
 사람은 방향과 인수만 결정하고, Agent는 승인된 Milestone을 실행 가능한 Task tree로 만든다. 승인 경계는 두 곳뿐이다.
 
 1. 사람은 Goal을 등록한다.
-2. Product Steward가 Goal을 바탕으로 Milestone 초안을 만들고 필수 범위와 선택 Backlog를 나눠 사람에게 확인을 요청한다.
-3. 사람이 Milestone을 확인하면 Agent가 Root Task를 만들고 실행을 시작한다.
+2. Goal 채택 시 Operation Control이 Product Steward에게 orchestration Task를 배정하고 깨운다. Product Steward는 Goal을 바탕으로 필수 범위, 선택 Backlog, Exit gate와 위험을 포함한 Milestone 초안을 만들어 사람에게 확인을 요청한다.
+3. 사람은 초안을 확인하거나 변경 사유와 함께 돌려보낸다. 확인하면 Product Steward가 Root Task를 만들고, 돌려보내면 이전 draft를 취소하고 새 orchestration Task에서 수정안을 만든다.
 4. Leaf Task가 끝나면 상위 Node Task 담당자가 확인한다.
 5. Root Task 담당자가 완료 근거를 `docs/milestones/<milestone-id>.md`에 기록해 Git에 commit한다.
 6. Product Steward가 보고서와 commit SHA를 Operation Control에 제출하고, 인증된 Board 사용자가 dashboard에서 직접 최종 확인한다.
@@ -14,12 +14,12 @@
 | 대상 | 상태 흐름 | 변경 권한 |
 |---|---|---|
 | Goal | `active` → `completed` | 사람만 등록·완료 확정 |
-| Milestone | `draft` → `awaiting_confirmation` → `confirmed` → `in_progress` → `awaiting_confirmation` → `completed` | Product Steward가 제안·진행, 사람만 확인·거절 |
+| Milestone | `draft` → `awaiting_confirmation` → `confirmed` → `in_progress` → `awaiting_confirmation` → `completed`; 초안 변경 요청은 기존 draft를 `cancelled`로 종료하고 새 `draft` 생성 | Product Steward가 제안·진행, 사람만 확인·거절 |
 | Backlog Task | `backlog` → `todo` 또는 `cancelled` | Product Steward만 필수 범위로 승격, Sweeper는 근거가 있는 항목만 취소 |
 | Node Task | `todo` → `in_progress` → `in_review` → `done` | 담당 Agent가 실행·제출, 상위 담당자가 확인 |
 | Leaf Task | `todo` → `in_progress` → `done` | 실행 Agent가 실행, 상위 Node 담당자가 확인 |
 
-`reject`는 완료된 결과를 지우거나 무작정 재실행하는 상태가 아니다. 거절 사유와 기대 결과를 기록하고, 실패한 Node 아래에 보완 child Task를 추가한 뒤 같은 Node를 다시 review한다.
+`reject`는 완료된 결과를 지우거나 무작정 재실행하는 상태가 아니다. 초안 변경 요청은 사유를 보존하고 새 revision을 만들며, 실행 결과 거절은 실패한 Node 아래에 보완 child Task를 추가한 뒤 같은 Node를 다시 review한다.
 
 사람의 요청은 Task가 아니라 Goal로 등록한다. Milestone 초안에서 Exit gate 달성에 필요한 작업은 확인 뒤 `todo` Task tree로 만들고, 하면 좋지만 없어도 완료 가능한 작업은 `backlog`로 기록한다. Backlog는 active Root/Node의 child가 아니며 Milestone 완료를 막지 않는다.
 
@@ -28,16 +28,16 @@ Product Steward만 Backlog를 `todo`로 승격하고 적절한 부모, Role, 담
 ## Backlog 정리
 
 - Backlog에는 Goal, 기대 가치, 선택인 이유와 폐기 조건을 기록한다.
-- `Backlog Sweep` Routine은 관련 Backlog가 있을 때 Milestone 확인 전과 완료 후 Product Steward가 실행하고 Sweeper에게 정리 Task를 배정한다.
+- `Backlog Sweep` Routine은 관련 Backlog가 있을 때 Milestone 확인 전과 완료 후 실행한다. Product Steward는 필요성을 표시하고, Board 또는 Routine owner가 실행하면 Sweeper에게 정리 Task가 배정된다.
 - Sweeper는 한 번에 최대 10개를 확인하고 명백한 중복, 이미 반영된 결과, 충족된 폐기 조건만 근거를 댓글로 남긴 뒤 `cancelled`로 바꾼다.
 - 기존 Task처럼 선택 여부나 폐기 조건이 불명확한 Backlog는 취소하지 않고 Product Steward에게 분류를 요청한다.
 - Routine이 만든 정리 Task는 active Root/Node의 child로 두지 않고 제품 workspace를 수정하지 않는다.
 
 ## Task tree 규칙
 
-- Milestone마다 Product Steward가 하나 이상의 Root Task를 만든다.
-- Root Task는 Milestone의 완료 기준과 담당 Agent를 가진다.
-- 담당 Agent는 자신이 맡은 Node가 한 heartbeat로 끝나지 않으면 2~5개의 child Task로 쪼갠다.
+- Milestone마다 Product Steward가 Root Task 하나를 만든다. Operation Control의 delivery state와 Git 완료 보고 기준점도 이 Root 하나를 추적한다.
+- Root Task는 Milestone 전체 완료 기준과 통합·검토 담당 Agent를 가지며, 서로 다른 실행 범위는 그 아래 2~5개 Node로 나눈다.
+- 담당 Agent는 자신이 맡은 Node가 한 heartbeat로 끝나지 않으면 Operation Control의 `create-child-task`로 2~5개의 child Task를 만든다. 일반 Issue child API를 직접 호출하지 않는다.
 - child는 부모의 Goal, Project, workspace를 상속하고 독립적인 완료 기준과 검증 방법을 가진다.
 - 부모는 모든 child가 terminal이 될 때까지 완료되지 않는다. Paperclip child 생성 시 `blockParentUntilDone: true`를 사용한다.
 - 같은 담당 Agent의 sibling은 `blockedByIssueIds`로 직렬화한다. 서로 다른 Agent가 안전하게 작업할 때만 병렬 실행한다.
@@ -50,7 +50,7 @@ Product Steward만 Backlog를 `todo`로 승격하고 적절한 부모, Role, 담
 Human Goal
    ↓
 Product Steward Milestone draft
-   ↓ human confirm
+   ↓ human confirm / request changes
 Milestone confirmed
    ↓
 Root Task
@@ -83,11 +83,11 @@ Milestone 최종 확인이 거절되면 Product Steward가 거절 사유를 Root
 | Goal / Milestone 연결 | Task의 기존 `goalId`, `projectId`와 Milestone 기록 |
 | 선택 작업 후보 | active Task tree 밖의 `backlog`, `goalId`와 `projectId`로만 연결 |
 | 필수 실행 범위 | 확인된 Milestone 아래의 `todo` Task tree |
-| 부모-자식 | `POST /api/issues/{parentId}/children` |
+| 부모-자식 | Operation Control의 `create-child-task`; 내부에서 Paperclip child relation 생성 |
 | 부모 완료 대기 | `blockParentUntilDone: true` |
 | sibling 순서 | `blockedByIssueIds` |
 | leaf 확인 | 부모 담당자의 완료 comment와 evidence |
-| Node/Root review | 부모 Task의 `executionPolicy` `review` stage |
+| Node/Root review | Operation Control의 `review-node`; Company가 별도로 구성한 경우 native `executionPolicy`를 추가 사용 |
 | 인간 Milestone 확인 | Operation Control dashboard의 인증된 Board action, 대상 revision은 보고서 Git commit SHA |
 | 거절 재진입 | 기존 child 재오픈 대신 보완 child 생성 |
 | Backlog 정리 | Sweeper에게 배정된 on-demand `Backlog Sweep` Routine run |
@@ -138,7 +138,8 @@ Backlog description에는 최소한 다음을 기록한다.
 ## 책임 경계
 
 - 사람: Goal 등록, Milestone 확인·거절, 범위·예산·고위험 결정, 최종 방향.
-- Product Steward: Milestone 초안, Root Task 생성, 실행 Agent 배정, tree 진행 조정, Git 보고서를 Operation Control에 제출. 최종 결정을 대신 기록하지 않는다.
+- Operation Control: Goal 채택·Milestone 확인·최종 완료 뒤 다음 단계 orchestration Task를 만들고 Product Steward를 깨운다. 이 제어 Task는 제품 delivery tree 밖에 둔다.
+- Product Steward: 배정된 orchestration Task에서 Milestone 초안, Root Task 생성, 실행 Agent 배정, tree 진행 조정, Git 보고서를 Operation Control에 제출한다. 최종 결정을 대신 기록하지 않는다.
 - Node 담당 Agent: child 분해, leaf 실행 확인, Node review 제출, 거절된 Node의 보완 child 생성.
 - 실행 Agent: 할당된 leaf 또는 child 하나를 수행하고 evidence를 남긴다. Root 담당자는 Milestone 완료 보고서를 commit한다. Goal, Milestone 상태와 sibling 범위를 바꾸지 않는다.
 

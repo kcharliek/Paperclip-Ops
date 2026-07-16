@@ -13,7 +13,7 @@ type AgentSummary = {
   role: string;
   status: string;
 };
-type GoalSummary = { id: string; title: string; status: string };
+type GoalSummary = { id: string; title: string; description?: string | null; status: string };
 type DeliveryState = {
   goalId: string;
   milestoneId: string | null;
@@ -69,6 +69,7 @@ export function OperationControlWidget({ context }: PluginWidgetProps) {
   const [stopPolicy, setStopPolicy] = useState<StopPolicy>("drain");
   const [reason, setReason] = useState("");
   const [rejectionReason, setRejectionReason] = useState("");
+  const [milestoneFeedback, setMilestoneFeedback] = useState("");
   const [remediationAgentId, setRemediationAgentId] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -244,15 +245,44 @@ export function OperationControlWidget({ context }: PluginWidgetProps) {
             {delivery?.root && <small>Root Task: {delivery.root.title} ({delivery.root.status})</small>}
 
             {deliveryState.phase === "milestone_pending" && (
-              <button
-                disabled={busy}
-                onClick={() => void run(() => confirmMilestone({
-                  companyId: context.companyId,
-                  goalId: deliveryState.goalId,
-                }))}
-              >
-                Confirm Milestone
-              </button>
+              <div style={{ display: "grid", gap: 10, padding: 10, border: "1px solid var(--border)", borderRadius: 6 }}>
+                {delivery?.milestone?.description && (
+                  <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 12 }}>{delivery.milestone.description}</pre>
+                )}
+                <button
+                  disabled={busy}
+                  onClick={() => void run(() => confirmMilestone({
+                    companyId: context.companyId,
+                    goalId: deliveryState.goalId,
+                    decision: "accepted",
+                  }))}
+                >
+                  Confirm Milestone
+                </button>
+                <label style={fieldStyle}>
+                  <span>Requested changes</span>
+                  <textarea
+                    value={milestoneFeedback}
+                    disabled={busy}
+                    onChange={(event) => setMilestoneFeedback(event.target.value)}
+                    style={inputStyle}
+                  />
+                </label>
+                <button
+                  disabled={busy || !milestoneFeedback.trim()}
+                  onClick={() => void run(async () => {
+                    await confirmMilestone({
+                      companyId: context.companyId,
+                      goalId: deliveryState.goalId,
+                      decision: "rejected",
+                      reason: milestoneFeedback,
+                    });
+                    setMilestoneFeedback("");
+                  })}
+                >
+                  Request Milestone changes
+                </button>
+              </div>
             )}
 
             {deliveryState.phase === "awaiting_human_confirmation" && deliveryState.report && (

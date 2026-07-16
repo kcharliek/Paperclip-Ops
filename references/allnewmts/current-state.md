@@ -27,12 +27,12 @@ Product Steward
 
 | Agent | Paperclip role | 주요 책임 | Task 배정 | Agent 생성 | 상태 |
 |---|---|---|---:|---:|---|
-| Product Steward | `ceo` | Goal, keep/kill, Task 전환, review와 approval | 가능 | 가능 | idle |
-| Prototyper | `researcher` | 후보 비교, 원본 분석, Prototype | 불가 | 불가 | idle |
-| Builder | `engineer` | production-grade 구현과 테스트 | 불가 | 불가 | idle |
-| Sweeper | `qa` | 삭제, 단순화, 성능과 회귀 검토 | 불가 | 불가 | idle |
-| Grower | `pm` | baseline, eval, 적합성 개선 | 불가 | 불가 | idle |
-| Maintainer | `devops` | 신뢰성, 보안, 비용, 장애와 복구 | 불가 | 불가 | idle |
+| Product Steward | `ceo` | Goal, keep/kill, controlled Root와 review 전환 | Root만 | 가능 | idle |
+| Prototyper | `researcher` | 후보 비교, 원본 분석, Prototype | 자기 Node의 plugin child만 | 불가 | idle |
+| Builder | `engineer` | production-grade 구현과 테스트 | 자기 Node의 plugin child만 | 불가 | idle |
+| Sweeper | `qa` | 삭제, 단순화, 성능과 회귀 검토 | 자기 Node의 plugin child만 | 불가 | idle |
+| Grower | `pm` | baseline, eval, 적합성 개선 | 자기 Node의 plugin child만 | 불가 | idle |
+| Maintainer | `devops` | 신뢰성, 보안, 비용, 장애와 복구 | normal에서 자기 Node의 plugin child만 | 불가 | idle |
 
 모든 Agent는 `codex_local`, `gpt-5.5`, on-demand heartbeat와 `maxConcurrentRuns: 1`을 사용한다.
 
@@ -44,9 +44,9 @@ Product Steward
 - Issue workspace override: 허용
 - Plus와 `mts_screen`: 읽기 전용 원본
 - Role label: 5개 모두 생성됨
-- Prototyper 결과: Product Steward review stage
-- Builder 결과: Sweeper review stage
-- `ALL-25`: `local-board` approval stage, 현재 선행 Task 때문에 blocked
+- 새 controlled Node/Root: Operation Control `review-node`; direct child·부모 조기 완료는 post-event guard가 취소·복구
+- 기존 Issue 29개: native `executionPolicy` 0개
+- `ALL-25`: blocked, native `executionPolicy` 없음, Operation Control 도입 전 legacy Task
 - 사람의 요청은 Goal, Milestone 필수 작업은 `todo`, 선택 작업은 active Task tree 밖의 `backlog`
 - Backlog `todo` 승격은 Product Steward, 근거가 있는 취소는 Sweeper
 
@@ -56,6 +56,8 @@ AllNewMTS 제품 저장소는 초기 Expo scaffold를 `01fddaf6e4f0b23457c10a442
 
 - Company Goal: SmartFormDe 시스템을 React Native Expo 기반으로 Migration
 - active Team Goal: 개발 기반과 FormDe 호환성 계약 확보
+- controlled Milestone draft: `54fdb930-9921-4592-b397-9381a4946ad6`, planned, 사람 확인 대기
+- 변경 요청된 이전 controlled draft 2개: cancelled
 - planned Team Goal: 대표 XMS E2E 호환 입증, XMS 런타임 v1 완성, 운영 화면 호환성 확대와 FormDe Cutover
 - 네 Team Goal의 owner: Product Steward
 - 별도 planned Task Goal: AI가 유지보수할 수 있는 시스템 구성
@@ -65,9 +67,9 @@ AllNewMTS 제품 저장소는 초기 Expo scaffold를 `01fddaf6e4f0b23457c10a442
 | 항목 | 값 |
 |---|---|
 | Plugin key | `local.operation-control` |
-| 버전 / 상태 | `0.5.2` / ready, healthy |
+| 버전 / 상태 | `0.6.0` / ready, healthy |
 | Company mode | `normal` |
-| Delivery state | Company Goal `goal_registered`, 아직 plugin Milestone·Root Task 없음 |
+| Delivery state | `milestone_pending`; Root 하나 + Node 세 개 초안, 사람 확인 전이라 Root Task 없음 |
 | Milestone 완료 gate | Plugin의 Git commit·보고서 실재 검증 + dashboard의 인증된 Board 직접 결정 |
 | Node 반복 거절 gate | 같은 Node의 두 번째 거절에서 자동 보완 생성을 중단하고 Board 범위·설계 판단을 요청 |
 | Company run ceiling | 시간당 20회; 초과 run 즉시 취소 후 전체 Agent maintenance, Board resume 시 현재 시간 창 reset |
@@ -84,3 +86,5 @@ Backlog Sweep의 첫 schedule 실행 예정 시각은 2026-07-20 09:30 KST다. t
 Company Integrity Check는 2026-07-16 수동 실행 `ALL-28`에서 `integrity: healthy`로 완료됐다. 공식 scheduler의 첫 실행은 2026-07-16 18:00 KST라 아직 관측 전이다.
 
 Pipeline은 아직 없다. 남은 운영 차이는 [drift](drift.md)에 기록한다.
+
+Live progression 검증은 `ALL-29` → Board 변경 요청 → `ALL-30` → Board 변경 요청 → `ALL-31` 순서로 성공했다. 세 orchestration run은 모두 succeeded였고 input token은 각각 1,388,524 / 458,182 / 308,524였다. 호출 지침과 이전 초안 전달로 감소했지만 run당 컨텍스트 비용은 여전히 drift다.

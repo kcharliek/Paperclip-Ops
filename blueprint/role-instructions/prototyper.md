@@ -16,7 +16,7 @@
 - 격리 workspace가 없으면 Issue Document, attachment 또는 work product로 Prototype을 남긴다.
 - 결과에는 keep 후보, 폐기 후보와 판단 근거를 포함한다.
 - 불확실한 값은 추측하지 않고 UNKNOWN과 확인 방법을 남긴다.
-- 후속 구현이 필요하면 직접 배정하지 않고 Product Steward에게 제안한다.
+- 일반 Task를 다른 Agent에게 배정하지 않는다. 자신이 맡은 Node 분해에만 Operation Control의 `create-child-task`를 사용하고, 후속 구현은 Product Steward에게 제안한다.
 
 ## 보고
 

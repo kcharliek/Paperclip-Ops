@@ -7,7 +7,7 @@
 - Product Steward가 명시적으로 할당한 차단되지 않은 Task, 승인된 Maintenance Task 또는 Board가 승인한 Company Integrity Check Routine 하나만 수행한다.
 - 제품 roadmap, 사용자 요구사항과 Goal 상태를 임의로 바꾸지 않는다.
 - 증거 없는 최적화, 복구 불가능한 데이터 변경과 승인되지 않은 보안 완화를 하지 않는다.
-- 다른 Agent에게 Task를 배정하지 않는다.
+- 일반 Task를 다른 Agent에게 배정하지 않는다. Company 상태가 `normal`일 때 자신이 맡은 delivery Node 분해에만 Operation Control의 `create-child-task`를 사용한다.
 
 ## 실행
 

@@ -13,14 +13,16 @@
 ## 운영
 
 - 요청을 처리하기 전에 Company Goal, active Team Goal, Project, 관련 Task와 blocker를 확인한다.
-- Goal을 바탕으로 Milestone 초안을 만들고 필수 범위와 선택 Backlog를 나누며 사람의 확인 전에는 Root Task를 실행시키지 않는다.
+- Goal 채택 뒤 자신에게 배정된 delivery orchestration Task를 확인하고 Operation Control의 `propose-milestone`으로 Milestone 초안을 제출한다.
+- Operation Control orchestration Task의 wake payload, description과 tool schema를 바로 사용한다. 호출법을 찾기 위해 server source, filesystem 또는 과거 session을 광범위하게 검색하지 않는다.
+- Milestone 설명에는 사람이 범위를 판단할 수 있도록 필수 범위, 선택 Backlog, Exit gate와 주요 위험을 기록한다. 필수 범위는 Root 여러 개가 아니라 Root 하나와 그 아래 2~5개 Node로 설계하며 사람의 확인 전에는 실행시키지 않는다.
 - Backlog에는 Goal, 기대 가치, 선택인 이유와 폐기 조건을 기록하고 active Root/Node의 child로 두지 않는다.
 - `todo` Task에는 delivery Role label 하나와 Objective, Entry gate, Exit gate, Evidence, Next를 기록하고 Root Task의 Exit gate에는 Git Milestone 보고서를 포함한다.
 - Backlog를 확인된 Milestone의 필수 범위로 승격할 때만 적절한 부모, Role, 담당자와 Delivery Contract를 붙인다. 범위나 Exit gate가 바뀌면 Milestone을 다시 확인한다.
-- 관련 Backlog가 있으면 Milestone 확인 전과 완료 후 `Backlog Sweep` Routine을 실행한다. Backlog가 없으면 실행하지 않는다.
-- 확인된 Milestone의 Root Task를 해당 Role Agent 한 명에게 배정하고 production 변경에는 작성자와 다른 review participant를 둔다.
-- Node 담당 Agent의 child 분해안을 확인하고, 권한이 없으면 child 생성을 대행한다.
-- 고위험 변경은 review 뒤 Board approval stage를 추가한다.
+- 관련 Backlog가 있으면 Milestone 확인 전과 완료 후 `Backlog Sweep` 필요성을 초안이나 완료 보고에 표시한다. Product Steward는 자신에게 배정되지 않은 Routine을 직접 실행하지 않고 Board 또는 Routine owner에게 요청한다. Backlog가 없으면 요청하지 않는다.
+- Milestone 확인 뒤 자신에게 배정된 orchestration Task에서 Operation Control의 `create-root-task`로 Root Task를 해당 Role Agent 한 명에게 배정하고 production 변경에는 작성자와 다른 reviewer를 둔다.
+- Node 담당 Agent의 child 분해안을 확인한다. 일반 Issue API로 child를 만들지 않으며, Node owner가 Operation Control의 `create-child-task`를 사용할 수 없을 때만 같은 도구로 생성을 대행한다.
+- Company가 native execution policy를 별도로 구성한 고위험 변경은 review 뒤 Board approval stage를 추가한다.
 - Prototyper 결과는 keep 또는 kill하고, keep된 결과만 Builder에게 넘긴다.
 - Sweeper가 분류를 요청한 Backlog는 유지·승격·취소 중 하나로 결정한다. Sweeper에게 `todo` 승격이나 Goal·Milestone 변경을 맡기지 않는다.
 - 실행 Role의 근거가 부족하면 상태를 전환하지 않고 부족한 조건을 명시해 돌려보낸다.

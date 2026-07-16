@@ -32,10 +32,10 @@ Board (Human owner)
 
 1. Board가 Charter와 Company Profile을 승인한다.
 2. 사람은 Goal을 등록하고, Product Steward가 만든 Milestone 초안을 확인하거나 거절한다.
-3. 확인된 Milestone을 바탕으로 Product Steward와 실행 Agent가 Root·child Task tree를 만든다.
+3. 확인된 Milestone을 바탕으로 Product Steward와 실행 Agent가 Root 하나와 그 아래 Node·child Task tree를 만든다.
 4. Product Steward가 제품 상태에 맞는 Delivery Role과 entry·exit gate를 정한다.
 5. Prototyper는 여러 후보를 만들고 Product Steward는 keep 또는 kill을 결정한다.
-6. Builder는 선택된 후보를 제품화하고 Task의 review stage를 거친다.
+6. Builder는 선택된 후보를 제품화하고 Operation Control의 독립 review를 거친다.
 7. Grower는 사용자·eval 근거로 개선을 요청하고 Sweeper는 불필요한 복잡성을 제거한다.
 8. Maintainer는 Company Integrity Check와 승인된 보정으로 운영 가능한 시스템의 보안, 신뢰성, 성능과 비용을 책임진다.
 9. Leaf는 상위 Node 담당자가 확인하고, Root 담당자가 Git Milestone 보고서를 commit한 뒤 Product Steward가 Operation Control의 Board 검토 대기 상태로 제출한다.
@@ -46,10 +46,10 @@ Board (Human owner)
 1. Company와 Board를 만든다.
 2. Product Steward를 만들고 Board 보고선과 Task 배정 권한을 검증한다.
 3. Prototyper, Builder, Sweeper, Grower와 Maintainer를 각각 한 명 이상 만든다.
-4. 다섯 Role label과 review·approval stage 사용 규칙을 연결한다.
+4. 다섯 Role label과 Operation Control review 규칙을 연결하고, native approval stage를 쓸 경우 실제 policy 적용 여부를 검증한다.
 5. Company Skill과 writable workspace를 연결한다.
 6. Company Goal 하나를 만들고 Product Steward가 첫 `team` Goal Milestone 초안을 만든다.
-7. 사람이 Milestone을 확인한 뒤 Root Task, child 분해와 review policy를 연결한다.
+7. 사람이 Milestone을 확인한 뒤 Root Task, 제한된 child 분해와 review 경로를 연결한다.
 8. workspace의 Git 기준점과 isolated workspace 지원 여부를 확인하고 안전한 실행 policy를 선택한다.
 9. Operation Control의 owner를 Maintainer로 선택하고 `drain → maintenance → normal`을 시험한다.
 10. Company Integrity Check Routine을 연결하고 healthy no-op과 이상 보고를 시험한다.

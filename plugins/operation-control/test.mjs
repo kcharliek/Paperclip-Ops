@@ -14,6 +14,7 @@ const manualPauseId = "00000000-0000-4000-8000-000000000004";
 const reviewerId = "00000000-0000-4000-8000-000000000005";
 const projectId = "00000000-0000-4000-8000-000000000006";
 const workspaceId = "00000000-0000-4000-8000-000000000007";
+const human = { type: "user", userId: "local-board" };
 const now = new Date();
 const gitWorkspace = mkdtempSync(join(tmpdir(), "operation-control-git-"));
 process.on("exit", () => rmSync(gitWorkspace, { recursive: true, force: true }));
@@ -119,12 +120,19 @@ await assert.rejects(
   }),
   /requires an Agent actor/,
 );
+await assert.rejects(
+  () => harness.performAction("start-maintenance", {
+    ownerAgentId: ownerId,
+    stopPolicy: "immediate",
+  }, { companyId, actor: { type: "agent", agentId: ownerId, runId: "run-agent-maintenance" } }),
+  /requires a human actor/,
+);
 
 await harness.performAction("start-maintenance", {
   ownerAgentId: ownerId,
   stopPolicy: "drain",
   reason: "Debt cleanup",
-}, { companyId });
+}, { companyId, actor: human });
 
 let data = await harness.getData("operation-control", { companyId });
 assert.equal(data.state.mode, "holding");
@@ -136,7 +144,7 @@ data = await harness.getData("operation-control", { companyId });
 assert.equal(data.state.mode, "maintenance");
 assert.equal(data.agents.find((item) => item.id === workerId).status, "paused");
 
-await harness.performAction("resume-normal", {}, { companyId });
+await harness.performAction("resume-normal", {}, { companyId, actor: human });
 data = await harness.getData("operation-control", { companyId });
 assert.equal(data.state.mode, "normal");
 assert.equal(data.agents.find((item) => item.id === workerId).status, "idle");
@@ -146,12 +154,12 @@ harness.seed({ agents: [agent(workerId, "Engineer", "running")] });
 await harness.performAction("start-maintenance", {
   ownerAgentId: ownerId,
   stopPolicy: "immediate",
-}, { companyId });
+}, { companyId, actor: human });
 data = await harness.getData("operation-control", { companyId });
 assert.equal(data.state.mode, "maintenance");
 assert.equal(data.agents.find((item) => item.id === workerId).status, "paused");
 
-await harness.performAction("resume-normal", {}, { companyId });
+await harness.performAction("resume-normal", {}, { companyId, actor: human });
 harness.seed({ agents: [agent(workerId, "Engineer", "running")] });
 await harness.emit("agent.run.started", { agentId: workerId }, { companyId });
 await harness.emit("agent.run.started", { agentId: workerId }, { companyId });
@@ -165,13 +173,12 @@ assert.equal(data.state.mode, "maintenance");
 assert.match(data.state.reason, /Hourly run limit exceeded \(3\/2\)/);
 assert.equal(data.agents.find((item) => item.id === workerId).status, "paused");
 assert.equal(data.agents.find((item) => item.id === ownerId).status, "paused");
-await harness.performAction("resume-normal", {}, { companyId });
+await harness.performAction("resume-normal", {}, { companyId, actor: human });
 data = await harness.getData("operation-control", { companyId });
 assert.equal(data.state.mode, "normal");
 assert.equal(data.runBudget.count, 0);
 assert.equal(data.agents.find((item) => item.id === manualPauseId).status, "paused");
 
-const human = { type: "user", userId: "local-board" };
 const steward = { type: "agent", agentId: ownerId, runId: "run-steward" };
 const builder = { type: "agent", agentId: workerId, runId: "run-builder" };
 
@@ -186,9 +193,53 @@ await harness.performAction("adopt-goal", { goalId: goal.id }, { companyId, acto
 data = await harness.getData("operation-control", { companyId });
 assert.equal(data.delivery.state.goalId, goal.id);
 assert.equal(data.delivery.state.phase, "goal_registered");
+let orchestrationTasks = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:delivery-orchestration",
+  originId: `${goal.id}:draft-milestone`,
+  includePluginOperations: true,
+  limit: 1,
+});
+assert.equal(orchestrationTasks[0]?.assigneeAgentId, ownerId);
+assert.match(orchestrationTasks[0]?.description ?? "", /api\/plugins\/tools\/execute/);
+await harness.performAction("start-maintenance", {
+  ownerAgentId: ownerId,
+  stopPolicy: "immediate",
+}, { companyId, actor: human });
+await assert.rejects(
+  () => harness.performAction("propose-milestone", {
+    goalId: goal.id,
+    title: "Must wait for normal operation",
+    description: "This proposal must not be accepted during maintenance.",
+  }, { companyId, actor: steward }),
+  /require normal Company operation/,
+);
+await harness.performAction("resume-normal", {}, { companyId, actor: human });
+const rejectedMilestone = await harness.performAction("propose-milestone", {
+  goalId: goal.id,
+  title: "Incomplete delivery slice",
+  description: "Required scope is still unclear.",
+}, { companyId, actor: steward });
+const requestedChanges = await harness.performAction("confirm-milestone", {
+  goalId: goal.id,
+  decision: "rejected",
+  reason: "Separate the required scope from optional Backlog.",
+}, { companyId, actor: human });
+assert.equal(requestedChanges.phase, "goal_registered");
+assert.equal((await harness.ctx.goals.get(rejectedMilestone.id, companyId)).status, "cancelled");
+const revisionTasks = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:delivery-orchestration",
+  originId: `${rejectedMilestone.id}:revise-milestone`,
+  includePluginOperations: true,
+  limit: 1,
+});
+assert.match(revisionTasks[0]?.description ?? "", /Required scope is still unclear/);
+assert.match(revisionTasks[0]?.description ?? "", /related-project-id/);
 const milestone = await harness.performAction("propose-milestone", {
   goalId: goal.id,
   title: "First delivery slice",
+  description: "## Required scope\n\n- Deliver the verified slice.\n\n## Optional Backlog\n\n- None.",
 }, { companyId, actor: steward });
 await assert.rejects(
   () => harness.performAction("create-root-task", {
@@ -198,7 +249,18 @@ await assert.rejects(
   }, { companyId, actor: steward }),
   /human-confirmed/,
 );
-await harness.performAction("confirm-milestone", { goalId: goal.id }, { companyId, actor: human });
+await harness.performAction("confirm-milestone", {
+  goalId: goal.id,
+  decision: "accepted",
+}, { companyId, actor: human });
+orchestrationTasks = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:delivery-orchestration",
+  originId: `${milestone.id}:create-root-task`,
+  includePluginOperations: true,
+  limit: 1,
+});
+assert.equal(orchestrationTasks[0]?.assigneeAgentId, ownerId);
 await assert.rejects(
   () => harness.performAction("create-root-task", {
     goalId: goal.id,
@@ -414,6 +476,7 @@ assert.equal(delivery.root.status, "done");
 const nextMilestone = await harness.performAction("propose-milestone", {
   goalId: goal.id,
   title: "Second delivery slice",
+  description: "## Required scope\n\n- Plan the next verified slice.",
 }, { companyId, actor: steward });
 assert.notEqual(nextMilestone.id, milestone.id);
 delivery = await harness.getData("delivery-control", { companyId, goalId: goal.id });

@@ -33,6 +33,7 @@ const ACTIVE_DELIVERY_GOAL_KEY = "active-delivery-goal-id";
 const DELIVERY_NODE_KEY = "delivery-node";
 const DELIVERY_NODE_REJECTION_COUNT_KEY = "delivery-node-rejection-count";
 const DELIVERY_MILESTONE_KEY = "delivery-milestone";
+const ORCHESTRATION_ORIGIN = "plugin:local.operation-control:delivery-orchestration" as const;
 
 type DeliveryPhase =
   | "goal_registered"
@@ -253,6 +254,12 @@ export function createOperationPlugin() {
         return isDeliveryState(value) ? value : null;
       };
 
+      const requireNormalOperation = async (companyId: string): Promise<void> => {
+        if ((await getState(companyId)).mode !== "normal") {
+          throw new Error("Delivery workflow changes require normal Company operation");
+        }
+      };
+
       const getHourlyRunBudget = async (companyId: string) => {
         const config = await ctx.config.get();
         const configuredLimit = config.maxRunsPerHour;
@@ -365,12 +372,64 @@ export function createOperationPlugin() {
         return matches[0];
       };
 
+      const queueOrchestratorWork = async ({
+        companyId,
+        goalId,
+        preferredAgentId,
+        originId,
+        title,
+        description,
+        actorUserId,
+      }: {
+        companyId: string;
+        goalId: string;
+        preferredAgentId?: string | null;
+        originId: string;
+        title: string;
+        description: string;
+        actorUserId: string;
+      }): Promise<Issue> => {
+        const orchestrator = await resolveOrchestrator(companyId, preferredAgentId);
+        const existing = await ctx.issues.list({
+          companyId,
+          originKind: ORCHESTRATION_ORIGIN,
+          originId,
+          includePluginOperations: true,
+          limit: 1,
+        });
+        const issue = existing[0] ?? await ctx.issues.create({
+          companyId,
+          goalId,
+          title,
+          description,
+          status: "todo",
+          priority: "high",
+          assigneeAgentId: orchestrator.id,
+          originKind: ORCHESTRATION_ORIGIN,
+          originId,
+          actor: { actorUserId },
+        });
+        if (!isTerminal(issue)) {
+          await ctx.issues.requestWakeup(issue.id, companyId, {
+            reason: title,
+            contextSource: "operation-control:delivery-orchestration",
+            idempotencyKey: `${originId}:wakeup`,
+            actorUserId,
+          });
+        }
+        return issue;
+      };
+
+      const toolExecutionGuide = (toolName: string) =>
+        `Use the registered Operation Control tool ${toolName} directly. If it is not exposed as a native tool, POST to $PAPERCLIP_API_URL/api/plugins/tools/execute with the Bearer $PAPERCLIP_API_KEY and JSON {"tool":"local.operation-control:${toolName}","parameters":{...},"runContext":{"agentId":"$PAPERCLIP_AGENT_ID","runId":"$PAPERCLIP_RUN_ID","companyId":"$PAPERCLIP_COMPANY_ID","projectId":"<related-project-id>"}}. If the current Task has no Project, resolve the related Project once from GET $PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/projects; projectId must not be null. Use the current wake payload and tool schema; do not search server source or past sessions for invocation details.`;
+
       const createChildTask = async (
         companyId: string,
         actorId: string,
         actorRunId: string | null,
         params: Record<string, unknown>,
       ) => {
+        await requireNormalOperation(companyId);
         const parent = await ctx.issues.get(stringParam(params, "parentIssueId"), companyId);
         if (!parent) throw new Error("Parent Task not found");
         const tracked = await getIssueDelivery(companyId, parent);
@@ -425,6 +484,7 @@ export function createOperationPlugin() {
         actorRunId: string | null,
         params: Record<string, unknown>,
       ) => {
+        await requireNormalOperation(companyId);
         const issue = await ctx.issues.get(stringParam(params, "issueId"), companyId);
         if (!issue) throw new Error("Node Task not found");
         const tracked = await getIssueDelivery(companyId, issue);
@@ -696,6 +756,7 @@ export function createOperationPlugin() {
       };
 
       const registerGoal = async (companyId: string, userId: string, params: Record<string, unknown>) => {
+        await requireNormalOperation(companyId);
         const activeGoalId = await ctx.state.get(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY));
         if (typeof activeGoalId === "string") {
           const active = await getDeliveryState(companyId, activeGoalId);
@@ -712,11 +773,20 @@ export function createOperationPlugin() {
         });
         await saveDeliveryState(companyId, freshDeliveryState(goal.id));
         await ctx.state.set(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY), goal.id);
+        await queueOrchestratorWork({
+          companyId,
+          goalId: goal.id,
+          originId: `${goal.id}:draft-milestone`,
+          title: "Draft the first controlled Milestone",
+          description: `Review Company Goal ${goal.id}, separate required scope from optional Backlog, then call propose-milestone with a complete human-reviewable description. Mark this orchestration Task done after the proposal is submitted.\n\n${toolExecutionGuide("propose-milestone")}`,
+          actorUserId: userId,
+        });
         ctx.logger.info("Delivery Goal registered", { companyId, goalId: goal.id, userId });
         return goal;
       };
 
       const adoptGoal = async (companyId: string, userId: string, params: Record<string, unknown>) => {
+        await requireNormalOperation(companyId);
         const goal = await requireGoal(stringParam(params, "goalId"), companyId);
         if (goal.level !== "company") throw new Error("Only a company Goal can enter delivery-control");
         if (goal.status !== "active" && goal.status !== "planned") {
@@ -734,11 +804,21 @@ export function createOperationPlugin() {
         const state = await getDeliveryState(companyId, goal.id) ?? freshDeliveryState(goal.id);
         await saveDeliveryState(companyId, state);
         await ctx.state.set(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY), goal.id);
+        await queueOrchestratorWork({
+          companyId,
+          goalId: goal.id,
+          preferredAgentId: state.orchestratorAgentId,
+          originId: `${goal.id}:draft-milestone`,
+          title: "Draft the next controlled Milestone",
+          description: `Review Company Goal ${goal.id}, separate required scope from optional Backlog, then call propose-milestone with a complete human-reviewable description. Mark this orchestration Task done after the proposal is submitted.\n\n${toolExecutionGuide("propose-milestone")}`,
+          actorUserId: userId,
+        });
         ctx.logger.info("Existing Goal adopted into delivery-control", { companyId, goalId: goal.id, userId });
         return { goal, state };
       };
 
       const proposeMilestone = async (companyId: string, agentId: string, params: Record<string, unknown>) => {
+        await requireNormalOperation(companyId);
         const goal = await requireGoal(stringParam(params, "goalId"), companyId);
         if (goal.level !== "company") throw new Error("Milestones must be based on a company Goal");
         await requireOrchestrator(agentId, companyId);
@@ -752,28 +832,61 @@ export function createOperationPlugin() {
         const milestone = await ctx.goals.create({
           companyId,
           title: stringParam(params, "title"),
-          description: typeof params.description === "string" ? params.description : undefined,
+          description: stringParam(params, "description"),
           level: "team",
           status: "planned",
           parentId: goal.id,
           ownerAgentId: agentId,
         });
-        await saveDeliveryState(companyId, { ...next, milestoneId: milestone.id, phase: "milestone_pending" });
+        await saveDeliveryState(companyId, {
+          ...next,
+          milestoneId: milestone.id,
+          orchestratorAgentId: agentId,
+          phase: "milestone_pending",
+        });
         return milestone;
       };
 
       const confirmMilestone = async (companyId: string, userId: string, params: Record<string, unknown>) => {
+        await requireNormalOperation(companyId);
         const goal = await requireGoal(stringParam(params, "goalId"), companyId);
         const state = await getDeliveryState(companyId, goal.id);
         if (!state?.milestoneId || state.phase !== "milestone_pending") throw new Error("No Milestone is awaiting human confirmation");
         const milestone = await requireGoal(state.milestoneId, companyId);
+        const decision = params.decision ?? "accepted";
+        if (decision === "rejected") {
+          const reason = stringParam(params, "reason");
+          const rejected = await ctx.goals.update(milestone.id, { status: "cancelled" }, companyId);
+          await saveDeliveryState(companyId, freshDeliveryState(goal.id));
+          await queueOrchestratorWork({
+            companyId,
+            goalId: goal.id,
+            preferredAgentId: state.orchestratorAgentId,
+            originId: `${milestone.id}:revise-milestone`,
+            title: "Revise the rejected Milestone proposal",
+            description: `The Board rejected Milestone ${milestone.id}.\n\n## Feedback\n\n${reason}\n\n## Previous proposal\n\n${milestone.description ?? "No previous description was recorded."}\n\nRevise only what the feedback requires, propose the replacement under Company Goal ${goal.id}, then mark this orchestration Task done.\n\n${toolExecutionGuide("propose-milestone")}`,
+            actorUserId: userId,
+          });
+          return { decision, milestone: rejected, phase: "goal_registered" };
+        }
+        if (decision !== "accepted") throw new Error("decision must be accepted or rejected");
         const confirmed = await ctx.goals.update(milestone.id, { status: "active" }, companyId);
         await saveDeliveryState(companyId, { ...state, phase: "milestone_confirmed" });
+        await queueOrchestratorWork({
+          companyId,
+          goalId: milestone.id,
+          preferredAgentId: state.orchestratorAgentId,
+          originId: `${milestone.id}:create-root-task`,
+          title: "Create the confirmed Milestone Root Task",
+          description: `Milestone ${milestone.id} is Board-confirmed. Call create-root-task with the required Project, execution owner, Delivery Contract and Git report exit gate, then mark this orchestration Task done.\n\n${toolExecutionGuide("create-root-task")}`,
+          actorUserId: userId,
+        });
         ctx.logger.info("Milestone confirmed by human", { companyId, goalId: goal.id, milestoneId: milestone.id, userId });
         return confirmed;
       };
 
       const createRootTask = async (companyId: string, agentId: string, runId: string | null, params: Record<string, unknown>) => {
+        await requireNormalOperation(companyId);
         const goal = await requireGoal(stringParam(params, "goalId"), companyId);
         const orchestrator = await requireOrchestrator(agentId, companyId);
         const state = await getDeliveryState(companyId, goal.id);
@@ -816,6 +929,7 @@ export function createOperationPlugin() {
         agentId: string,
         params: Record<string, unknown>,
       ) => {
+        await requireNormalOperation(companyId);
         const goal = await requireGoal(stringParam(params, "goalId"), companyId);
         await requireOrchestrator(agentId, companyId);
         const state = await getDeliveryState(companyId, goal.id);
@@ -871,6 +985,7 @@ export function createOperationPlugin() {
         userId: string,
         params: Record<string, unknown>,
       ) => {
+        await requireNormalOperation(companyId);
         const goal = await requireGoal(stringParam(params, "goalId"), companyId);
         const state = await getDeliveryState(companyId, goal.id);
         if (!state?.milestoneId || !state.rootTaskId || state.phase !== "awaiting_human_confirmation" || !state.report) {
@@ -887,6 +1002,15 @@ export function createOperationPlugin() {
           await ctx.issues.update(root.id, { status: "done" }, companyId, { actorUserId: userId });
           const milestone = await ctx.goals.update(state.milestoneId, { status: "achieved" }, companyId);
           await saveDeliveryState(companyId, { ...state, phase: "completed" });
+          await queueOrchestratorWork({
+            companyId,
+            goalId: goal.id,
+            preferredAgentId: state.orchestratorAgentId,
+            originId: `${state.milestoneId}:plan-next-milestone`,
+            title: "Plan the next controlled Milestone",
+            description: `Milestone ${state.milestoneId} was accepted. Review remaining Goal scope and Backlog, then either propose the next Milestone or report that Company Goal ${goal.id} is ready for human completion. Mark this orchestration Task done after recording the outcome.\n\n${toolExecutionGuide("propose-milestone")}`,
+            actorUserId: userId,
+          });
           ctx.logger.info("Milestone completed by direct Board confirmation", {
             companyId,
             goalId: goal.id,
@@ -1057,7 +1181,7 @@ export function createOperationPlugin() {
               title: { type: "string" },
               description: { type: "string" },
             },
-            required: ["goalId", "title"],
+            required: ["goalId", "title", "description"],
           },
         },
         async (params, runContext: ToolRunContext) => {
@@ -1217,6 +1341,7 @@ export function createOperationPlugin() {
 
       ctx.actions.register("start-maintenance", async (params, context) => {
         const companyId = readCompanyId(params, context.companyId);
+        actorUser(context);
         const ownerAgentId = params.ownerAgentId;
         const stopPolicy = params.stopPolicy;
         const reason = typeof params.reason === "string" && params.reason.trim()
@@ -1231,6 +1356,7 @@ export function createOperationPlugin() {
 
       ctx.actions.register("resume-normal", async (params, context) => {
         const companyId = readCompanyId(params, context.companyId);
+        actorUser(context);
         return serialized(companyId, () => resumeNormal(companyId));
       });
 
