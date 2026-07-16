@@ -33,9 +33,12 @@ AI Company Blueprint
 ```text
 실제 Company 관찰
   → Reference 갱신
+  → Ops Company의 System Auditor가 개선 Backlog로 분류
   → 반복되는 문제만 Blueprint에 반영
   → Company Profile에 적용
   → API와 실제 run으로 검증
 ```
 
 한 Company에서 한 번 발생한 문제는 우선 reference drift다. 두 번째 Company에서도 필요한 규칙임이 확인될 때 범용 Blueprint로 올린다.
+
+Ops Company의 조직과 승인 경계는 [Paperclip Ops Company](ops-company.md)에 있다.

@@ -24,6 +24,8 @@ Board (Human owner)
 | Grower | `pm` | 사용 근거와 eval 기반 반복 개선 | 근거 읽기, 승인된 실험 쓰기 |
 | Maintainer | `devops` | 보안, 신뢰성, 성능, 비용, 장애와 유지보수 | 제품 workspace와 운영 근거 쓰기, Maintenance owner |
 
+Ops 시스템 자체를 제품으로 운영하는 Company는 선택형 `System Auditor`(`researcher`)를 Product Steward 직속으로 둘 수 있다. System Auditor는 알려진 규칙을 검사하는 Company Integrity Check와 달리 아직 규칙으로 포착되지 않은 불완전성을 찾아 Backlog로 제안하며 직접 수정하거나 `todo`로 승격하지 않는다.
+
 ## Paperclip 제약을 반영한 공통 규칙
 
 - 모든 실행 Role은 Product Steward 한 명에게 직접 보고한다. Paperclip의 `reportsTo`는 하나만 허용한다.
@@ -40,4 +42,4 @@ Board (Human owner)
 - Agent 생성은 Board 승인 정책을 우회하지 않는다.
 - sandbox와 approval 우회는 신뢰된 로컬 환경에서 Company Profile이 명시한 경우에만 허용한다.
 
-표준 instructions는 [role-instructions](role-instructions/)에 있다. Agent 이름, ID, model, 예산과 실제 수는 Company Profile 값이다.
+표준 instructions는 [role-instructions](role-instructions/)에 있고 선택형 Ops Role은 [System Auditor](role-instructions/system-auditor.md)에 있다. Agent 이름, ID, model, 예산과 실제 수는 Company Profile 값이다.
