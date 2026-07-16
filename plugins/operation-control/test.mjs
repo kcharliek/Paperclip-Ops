@@ -123,6 +123,14 @@ await assert.rejects(
   /human-confirmed/,
 );
 await harness.performAction("confirm-milestone", { goalId: goal.id }, { companyId, actor: human });
+await assert.rejects(
+  () => harness.performAction("create-root-task", {
+    goalId: goal.id,
+    title: "Orchestrator must not execute",
+    assigneeAgentId: ownerId,
+  }, { companyId, actor: steward }),
+  /active execution Agent/,
+);
 const root = await harness.performAction("create-root-task", {
   goalId: goal.id,
   title: "Delivery root",
