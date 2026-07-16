@@ -16,6 +16,10 @@
 
 Paperclip Core는 포크하지 않는다. 공개 Plugin SDK의 Agent 상태, run 이벤트, plugin state, Issue Document와 Dashboard UI만 사용한다.
 
+해결 순서는 `Paperclip 공식 기능 → Paperclip Plugin SDK → 명시적 미해결`이다. Plugin은 Paperclip 안에 설치되고 상태와 UI도 Paperclip이 소유해야 한다. 별도 서비스가 Paperclip을 대신해 scheduling, orchestration, 승인 또는 상태 전이를 수행하게 만들지 않는다. SDK에 필요한 hook이 없으면 외부 sidecar나 Core DB 직접 쓰기로 우회하지 않고 한계로 유지한다.
+
+제품 저장소는 실행 산출물과 Git evidence의 경계다. Company·Issue·승인·운영 mode의 권위 상태는 Paperclip entity 또는 company-scoped plugin state에만 둔다. `tests/system`은 disposable Company의 계약을 확인한 뒤 종료하며 상시 운영 구성요소가 아니다.
+
 ## 운영 상태
 
 ```text
