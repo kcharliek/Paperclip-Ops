@@ -72,9 +72,11 @@ AllNewMTS 제품 저장소는 초기 Expo scaffold를 `01fddaf6e4f0b23457c10a442
 | Node 반복 거절 gate | 같은 Node의 두 번째 거절에서 자동 보완 생성을 중단하고 Board 범위·설계 판단을 요청 |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
-| Backlog Sweep Routine | active, Sweeper 담당, 수동/API 실행, schedule 없음 |
+| Backlog Sweep Routine | active, Sweeper 담당, 매주 월요일 09:30 KST, `skip_if_active` / `skip_missed` |
 | Paperclip DB backup | 공식 자동 backup 활성화, 60분 주기, health `ok`; 보존은 daily 7일·weekly 4주·monthly 1개월 |
 
 2026-07-16 13:55 KST에 공식 `POST /api/instance/database-backups`로 수동 backup을 생성했다. 결과는 5,216,643 bytes, 1.555초였고 gzip 무결성 검사와 Paperclip health 재확인을 통과했다. 공개 API/CLI에는 restore 경로가 없어 복원 drill과 RTO는 아직 검증하지 않았다.
+
+Backlog Sweep의 첫 schedule 실행 예정 시각은 2026-07-20 09:30 KST다. trigger 등록과 `nextRunAt` 계산은 확인했지만 첫 실제 실행 결과는 아직 관측 전이다.
 
 Pipeline은 아직 없다. 남은 운영 차이는 [drift](drift.md)에 기록한다.
