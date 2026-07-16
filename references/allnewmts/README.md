@@ -98,7 +98,7 @@ shared workspace writer는 동시에 한 명만 허용한다. isolated workspace
 |---|---|
 | Routines | `Company Integrity Check`, active, Maintainer 담당, 6시간마다; `Backlog Sweep`, active, Sweeper 담당, 매주 월요일 09:30 KST. 둘 다 `skip_if_active` / `skip_missed` |
 | Pipeline | 없음 |
-| Operation Control | `local.operation-control` 0.6.1, ready/healthy, Company run 20회/시간 hard cap |
+| Operation Control | `local.operation-control` 0.6.2, ready/healthy, Company run 20회/시간 hard cap |
 | Controlled delivery | `milestone_pending`; Milestone `54fdb930-9921-4592-b397-9381a4946ad6`, Root Task는 사람 확인 전이라 없음 |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
@@ -108,7 +108,7 @@ Operation Control은 Paperclip Agent 한 명만 owner로 유지할 수 있다. M
 
 2026-07-16 live 검증에서 Goal 재채택이 `ALL-29`를 만들고 Product Steward를 자동으로 깨웠다. Board 변경 요청 두 번은 기존 초안을 `cancelled`로 보존하면서 `ALL-30`, `ALL-31` revision Task를 만들었고, 최종 초안은 Root 하나와 Node 세 개로 정리된 뒤 모든 Agent가 idle인 사람 확인 대기 상태에서 멈췄다.
 
-0.6.1의 Board 복구 action은 planning 단계에서 단일 orchestration Task를 다시 깨우거나 누락 Task를 재생성한다. 현재 `milestone_pending` live 호출은 `human_gate`로 무변경 종료되어 사람 확인을 우회하지 않았다.
+0.6.2의 Board 복구 action은 planning 단계에서 단일 orchestration Task를 다시 깨우거나 누락 Task를 재생성하며, 종료된 이전 recovery는 새 시도를 막지 않는다. Issue create·wakeup 실패 주입 test를 통과했고, 현재 `milestone_pending` live 호출은 `human_gate`로 무변경 종료되어 사람 확인을 우회하지 않았다.
 
 `Company Integrity Check`는 read-only 공식 Routine이다. 2026-07-16 수동 실행 `ALL-28`에서 health, backup, operation mode·run budget, Agent org chain, Routine schedule과 timeout run을 확인해 `integrity: healthy`로 종료했다.
 

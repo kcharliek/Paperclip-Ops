@@ -436,12 +436,14 @@ export function createOperationPlugin() {
 
         const targetGoalId = state.phase === "milestone_confirmed" ? state.milestoneId : state.goalId;
         if (!targetGoalId) throw new Error("Delivery state is missing the orchestration Goal");
-        const pending = (await ctx.issues.list({
+        const orchestrationTasks = await ctx.issues.list({
           companyId,
           originKind: ORCHESTRATION_ORIGIN,
           includePluginOperations: true,
           limit: 100,
-        })).filter((issue) => issue.goalId === targetGoalId && !isTerminal(issue));
+        });
+        const relevant = orchestrationTasks.filter((issue) => issue.goalId === targetGoalId);
+        const pending = relevant.filter((issue) => !isTerminal(issue));
         if (pending.length > 1) throw new Error("Multiple pending delivery orchestration Tasks require manual resolution");
         if (pending[0]) {
           await ctx.issues.requestWakeup(pending[0].id, companyId, {
@@ -462,11 +464,13 @@ export function createOperationPlugin() {
               title: state.phase === "completed" ? "Recover next Milestone planning" : "Recover Milestone proposal",
               description: `Review remaining Company Goal ${state.goalId} scope and call propose-milestone, then mark this recovery Task done.\n\n${toolExecutionGuide("propose-milestone")}`,
             };
+        const recoveryOrigin = `${state.goalId}:repair:${state.phase}:${state.changedAt}`;
+        const recoveryAttempt = relevant.filter((issue) => issue.originId?.startsWith(recoveryOrigin)).length;
         const issue = await queueOrchestratorWork({
           companyId,
           goalId: targetGoalId,
           preferredAgentId: state.orchestratorAgentId,
-          originId: `${state.goalId}:repair:${state.phase}:${state.changedAt}`,
+          originId: recoveryAttempt ? `${recoveryOrigin}:${recoveryAttempt + 1}` : recoveryOrigin,
           ...next,
           actorUserId,
         });

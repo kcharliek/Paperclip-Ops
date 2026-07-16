@@ -189,7 +189,18 @@ const goal = await harness.ctx.goals.create({
   level: "company",
   status: "active",
 });
-await harness.performAction("adopt-goal", { goalId: goal.id }, { companyId, actor: human });
+const createIssue = harness.ctx.issues.create;
+harness.ctx.issues.create = async (input) => {
+  if (input.originKind === "plugin:local.operation-control:delivery-orchestration") {
+    harness.ctx.issues.create = createIssue;
+    throw new Error("injected orchestration create failure");
+  }
+  return createIssue(input);
+};
+await assert.rejects(
+  () => harness.performAction("adopt-goal", { goalId: goal.id }, { companyId, actor: human }),
+  /injected orchestration create failure/,
+);
 data = await harness.getData("operation-control", { companyId });
 assert.equal(data.delivery.state.goalId, goal.id);
 assert.equal(data.delivery.state.phase, "goal_registered");
@@ -200,6 +211,16 @@ let orchestrationTasks = await harness.ctx.issues.list({
   includePluginOperations: true,
   limit: 1,
 });
+assert.equal(orchestrationTasks.length, 0);
+const recoveredCreate = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
+assert.equal(recoveredCreate.status, "created");
+orchestrationTasks = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:delivery-orchestration",
+  includePluginOperations: true,
+  limit: 100,
+});
+orchestrationTasks = orchestrationTasks.filter((issue) => issue.id === recoveredCreate.issueId);
 assert.equal(orchestrationTasks[0]?.assigneeAgentId, ownerId);
 assert.match(orchestrationTasks[0]?.description ?? "", /api\/plugins\/tools\/execute/);
 const repaired = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
@@ -208,6 +229,7 @@ assert.equal(repaired.issueId, orchestrationTasks[0]?.id);
 await harness.ctx.issues.update(orchestrationTasks[0].id, { status: "done" }, companyId);
 const recreated = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
 assert.equal(recreated.status, "created");
+assert.notEqual(recreated.issueId, recoveredCreate.issueId);
 assert.equal((await harness.ctx.issues.get(recreated.issueId, companyId)).assigneeAgentId, ownerId);
 await harness.ctx.issues.update(recreated.issueId, { status: "done" }, companyId);
 await assert.rejects(
@@ -263,10 +285,18 @@ await assert.rejects(
   }, { companyId, actor: steward }),
   /human-confirmed/,
 );
-await harness.performAction("confirm-milestone", {
-  goalId: goal.id,
-  decision: "accepted",
-}, { companyId, actor: human });
+const requestWakeup = harness.ctx.issues.requestWakeup;
+harness.ctx.issues.requestWakeup = async (issueId, scopedCompanyId, options) => {
+  harness.ctx.issues.requestWakeup = requestWakeup;
+  throw new Error("injected orchestration wakeup failure");
+};
+await assert.rejects(
+  () => harness.performAction("confirm-milestone", {
+    goalId: goal.id,
+    decision: "accepted",
+  }, { companyId, actor: human }),
+  /injected orchestration wakeup failure/,
+);
 orchestrationTasks = await harness.ctx.issues.list({
   companyId,
   originKind: "plugin:local.operation-control:delivery-orchestration",
@@ -275,6 +305,9 @@ orchestrationTasks = await harness.ctx.issues.list({
   limit: 1,
 });
 assert.equal(orchestrationTasks[0]?.assigneeAgentId, ownerId);
+const recoveredWakeup = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
+assert.equal(recoveredWakeup.status, "woken");
+assert.equal(recoveredWakeup.issueId, orchestrationTasks[0]?.id);
 await assert.rejects(
   () => harness.performAction("create-root-task", {
     goalId: goal.id,
