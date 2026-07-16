@@ -7,6 +7,7 @@ const companyId = "00000000-0000-4000-8000-000000000001";
 const ownerId = "00000000-0000-4000-8000-000000000002";
 const workerId = "00000000-0000-4000-8000-000000000003";
 const manualPauseId = "00000000-0000-4000-8000-000000000004";
+const reviewerId = "00000000-0000-4000-8000-000000000005";
 const now = new Date();
 
 const agent = (id, name, status, role = "engineer") => ({
@@ -66,9 +67,15 @@ harness.seed({
     agent(ownerId, "Configured Coordinator", "idle", "ceo"),
     agent(workerId, "Engineer", "running"),
     agent(manualPauseId, "Already Paused", "paused"),
+    agent(reviewerId, "Independent Reviewer", "idle", "qa"),
   ],
 });
 await plugin.definition.setup(harness.ctx);
+assert.equal(
+  manifest.tools?.some((tool) => tool.name === "record-milestone-confirmation"),
+  false,
+  "Agents must not receive a tool that can record the final Board decision",
+);
 
 await harness.performAction("start-maintenance", {
   ownerAgentId: ownerId,
@@ -106,10 +113,17 @@ const steward = { type: "agent", agentId: ownerId, runId: "run-steward" };
 const builder = { type: "agent", agentId: workerId, runId: "run-builder" };
 
 await harness.performAction("resume-normal", {}, { companyId });
-const goal = await harness.performAction("register-goal", {
+const goal = await harness.ctx.goals.create({
+  companyId,
   title: "Workflow contract",
   description: "Verify human gates and recursive Task review.",
-}, { companyId, actor: human });
+  level: "company",
+  status: "active",
+});
+await harness.performAction("adopt-goal", { goalId: goal.id }, { companyId, actor: human });
+data = await harness.getData("operation-control", { companyId });
+assert.equal(data.delivery.state.goalId, goal.id);
+assert.equal(data.delivery.state.phase, "goal_registered");
 const milestone = await harness.performAction("propose-milestone", {
   goalId: goal.id,
   title: "First delivery slice",
@@ -146,15 +160,23 @@ await assert.rejects(
   /promoted to todo/,
 );
 await harness.ctx.issues.update(root.id, { status: "todo" }, companyId, { actorAgentId: ownerId });
+await assert.rejects(
+  () => harness.performAction("create-child-task", {
+    parentIssueId: root.id,
+    title: "Paused executor",
+    assigneeAgentId: manualPauseId,
+  }, { companyId, actor: builder }),
+  /active and invokable/,
+);
 const childOne = await harness.performAction("create-child-task", {
   parentIssueId: root.id,
   title: "Child one",
-  assigneeAgentId: manualPauseId,
+  assigneeAgentId: reviewerId,
 }, { companyId, actor: builder });
 const childTwo = await harness.performAction("create-child-task", {
   parentIssueId: root.id,
   title: "Child two",
-  assigneeAgentId: manualPauseId,
+  assigneeAgentId: reviewerId,
   blockedByIssueIds: [childOne.id],
 }, { companyId, actor: builder });
 assert.equal(childTwo.parentId, root.id);
@@ -166,8 +188,8 @@ await assert.rejects(
   }, { companyId, actor: builder }),
   /terminal/,
 );
-await harness.ctx.issues.update(childOne.id, { status: "done" }, companyId, { actorAgentId: manualPauseId });
-await harness.ctx.issues.update(childTwo.id, { status: "done" }, companyId, { actorAgentId: manualPauseId });
+await harness.ctx.issues.update(childOne.id, { status: "done" }, companyId, { actorAgentId: reviewerId });
+await harness.ctx.issues.update(childTwo.id, { status: "done" }, companyId, { actorAgentId: reviewerId });
 const rootReview = await harness.performAction("review-node", {
   issueId: root.id,
   decision: "approved",
@@ -200,21 +222,19 @@ assert.equal(firstRequest.data.phase, "awaiting_human_confirmation");
 assert.equal(firstRequest.data.report.path, reportPath);
 assert.equal(firstRequest.data.report.commitSha, "a".repeat(40));
 await assert.rejects(
-  harness.executeTool("record-milestone-confirmation", {
+  () => harness.performAction("record-milestone-confirmation", {
     goalId: goal.id,
     decision: "accepted",
-    interactionId: "interaction-from-another-request",
-  }, { companyId, agentId: ownerId, runId: "run-mismatched-confirmation" }),
-  /does not match/,
+  }, { companyId, actor: steward }),
+  /human actor/,
 );
 
-const remediation = (await harness.executeTool("record-milestone-confirmation", {
+const remediation = await harness.performAction("record-milestone-confirmation", {
   goalId: goal.id,
   decision: "rejected",
-  interactionId: firstRequest.data.interactionId,
   reason: "Human acceptance evidence is incomplete.",
-  assigneeAgentId: manualPauseId,
-}, { companyId, agentId: ownerId, runId: "run-rejection" })).data;
+  assigneeAgentId: reviewerId,
+}, { companyId, actor: human });
 assert.equal(remediation.phase, "executing");
 const rejectedRoot = await harness.ctx.issues.get(root.id, companyId);
 assert.equal(rejectedRoot.status, "in_progress");
@@ -229,7 +249,7 @@ const rogueChild = await harness.ctx.issues.create({
   title: "Rogue child",
   status: "todo",
   priority: "low",
-  assigneeAgentId: manualPauseId,
+  assigneeAgentId: reviewerId,
   actor: { actorAgentId: workerId },
 });
 await harness.emit("issue.created", { issueId: rogueChild.id }, {
@@ -250,7 +270,7 @@ await harness.emit("issue.updated", { issueId: root.id }, {
   actorId: workerId,
 });
 assert.equal((await harness.ctx.issues.get(root.id, companyId)).status, "in_review");
-await harness.ctx.issues.update(remediationIssue.id, { status: "done" }, companyId, { actorAgentId: manualPauseId });
+await harness.ctx.issues.update(remediationIssue.id, { status: "done" }, companyId, { actorAgentId: reviewerId });
 await harness.performAction("review-node", {
   issueId: root.id,
   decision: "approved",
@@ -261,14 +281,24 @@ const secondRequest = await harness.executeTool("request-milestone-review", {
   commitSha: "b".repeat(40),
   summary: "Remediated completion report.",
 }, { companyId, agentId: ownerId, runId: "run-report-2" });
-await harness.executeTool("record-milestone-confirmation", {
+await harness.performAction("record-milestone-confirmation", {
   goalId: goal.id,
-  interactionId: secondRequest.data.interactionId,
   decision: "accepted",
-}, { companyId, agentId: ownerId, runId: "run-acceptance" });
+}, { companyId, actor: human });
 delivery = await harness.getData("delivery-control", { companyId, goalId: goal.id });
 assert.equal(delivery.state.phase, "completed");
 assert.equal(delivery.milestone.status, "achieved");
 assert.equal(delivery.root.status, "done");
+
+const nextMilestone = await harness.performAction("propose-milestone", {
+  goalId: goal.id,
+  title: "Second delivery slice",
+}, { companyId, actor: steward });
+assert.notEqual(nextMilestone.id, milestone.id);
+delivery = await harness.getData("delivery-control", { companyId, goalId: goal.id });
+assert.equal(delivery.state.phase, "milestone_pending");
+assert.equal(delivery.state.milestoneId, nextMilestone.id);
+assert.equal(delivery.state.rootTaskId, null);
+assert.equal((await harness.ctx.goals.get(milestone.id, companyId)).status, "achieved");
 
 console.log("operation-control: ok");

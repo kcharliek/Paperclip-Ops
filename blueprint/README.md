@@ -38,7 +38,7 @@ Board (Human owner)
 6. Builder는 선택된 후보를 제품화하고 Task의 review stage를 거친다.
 7. Grower는 사용자·eval 근거로 개선을 요청하고 Sweeper는 불필요한 복잡성을 제거한다.
 8. Maintainer는 운영 가능한 시스템의 보안, 신뢰성, 성능과 비용을 책임진다.
-9. Leaf는 상위 Node 담당자가 확인하고, Root 담당자가 Git Milestone 보고서를 commit한 뒤 Product Steward가 Paperclip confirm request를 보낸다.
+9. Leaf는 상위 Node 담당자가 확인하고, Root 담당자가 Git Milestone 보고서를 commit한 뒤 Product Steward가 Operation Control의 Board 검토 대기 상태로 제출한다.
 10. Maintainer가 필요하면 [Maintenance](../docs/architecture.md)를 요청하고 단일 owner로 실행한 뒤 `normal`로 복귀한다.
 
 ## 설정 순서

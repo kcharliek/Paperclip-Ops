@@ -347,6 +347,26 @@ async function run() {
     await operationAction(plugin.id, company.id, "resume-normal");
     const resumed = await operationData(plugin.id, company.id);
     const resumedAgents = Object.fromEntries(resumed.agents.map((agent) => [agent.id, agent.status]));
+    const goal = await api(`/api/companies/${company.id}/goals`, {
+      method: "POST",
+      body: {
+        title: "Controlled delivery system-test Goal",
+        description: "Disposable Goal for the deterministic actor-boundary check.",
+        level: "company",
+        status: "active",
+      },
+    });
+    await operationAction(plugin.id, company.id, "adopt-goal", { goalId: goal.id });
+    const controlled = await operationData(plugin.id, company.id);
+    let boardAgentBoundary = null;
+    try {
+      await operationAction(plugin.id, company.id, "propose-milestone", {
+        goalId: goal.id,
+        title: "Board must not impersonate an Agent",
+      });
+    } catch (error) {
+      boardAgentBoundary = String(error);
+    }
     scenario("operation-control", [
       check("Immediate stop reached maintenance", maintenance.state.mode === "maintenance", maintenance.state.mode, "maintenance"),
       check("Maintenance owner stayed available", maintenanceAgents[maintainer.id] !== "paused", maintenanceAgents[maintainer.id], "not paused"),
@@ -354,6 +374,9 @@ async function run() {
       check("Resume returned to normal", resumed.state.mode === "normal", resumed.state.mode, "normal"),
       check("Plugin-paused Product Steward resumed", resumedAgents[steward.id] !== "paused", resumedAgents[steward.id], "not paused"),
       check("Manually paused Builder stayed paused", resumedAgents[builder.id] === "paused", resumedAgents[builder.id], "paused"),
+      check("Board adopted an existing company Goal", controlled.delivery?.state?.goalId === goal.id, controlled.delivery?.state?.goalId, goal.id),
+      check("Adopted Goal entered the controlled phase", controlled.delivery?.state?.phase === "goal_registered", controlled.delivery?.state?.phase, "goal_registered"),
+      check("Board cannot impersonate the Agent workflow step", boardAgentBoundary?.includes("requires an Agent actor"), boardAgentBoundary, "requires an Agent actor"),
     ]);
 
     if (includeLlm) {

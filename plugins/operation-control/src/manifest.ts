@@ -3,9 +3,9 @@ import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 const manifest = {
   id: "local.operation-control",
   apiVersion: 1,
-  version: "0.1.0",
+  version: "0.2.0",
   displayName: "Operation Control",
-  description: "Drain or immediately pause agents and enforce Goal → Milestone → Task delivery gates.",
+  description: "Drain or immediately pause agents and enforce human-gated Goal → Milestone → Task delivery.",
   author: "Local",
   categories: ["automation", "ui"],
   capabilities: [
@@ -26,7 +26,6 @@ const manifest = {
     "issue.relations.read",
     "issue.subtree.read",
     "issue.comments.create",
-    "issue.interactions.create",
     "issue.documents.write",
     "ui.dashboardWidget.register"
   ],
@@ -119,22 +118,6 @@ const manifest = {
           evidence: { type: "string" }
         },
         required: ["goalId", "reportPath", "commitSha", "summary"]
-      }
-    },
-    {
-      name: "record-milestone-confirmation",
-      displayName: "Record Milestone Confirmation",
-      description: "Apply the Board response from a Paperclip Milestone confirmation continuation.",
-      parametersSchema: {
-        type: "object",
-        properties: {
-          goalId: { type: "string" },
-          interactionId: { type: "string" },
-          decision: { type: "string", enum: ["accepted", "rejected"] },
-          reason: { type: "string" },
-          assigneeAgentId: { type: "string" }
-        },
-        required: ["goalId", "interactionId", "decision"]
       }
     }
   ],

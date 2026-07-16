@@ -27,6 +27,7 @@ const ARTIFACT_ISSUE_KEY = "operation-state-issue-id";
 const PAUSED_MARKER_KEY = "paused-by-operation-control";
 const ARTIFACT_ORIGIN = "plugin:operation-control" as const;
 const DELIVERY_STATE_KEY_PREFIX = "delivery-control:";
+const ACTIVE_DELIVERY_GOAL_KEY = "active-delivery-goal-id";
 const DELIVERY_NODE_KEY = "delivery-node";
 const DELIVERY_MILESTONE_KEY = "delivery-milestone";
 
@@ -55,7 +56,7 @@ interface MilestoneReport {
   path: string;
   commitSha: string;
   summary: string;
-  interactionId: string;
+  evidence: string;
 }
 
 interface DeliveryNode {
@@ -131,6 +132,10 @@ function isTerminal(issue: Issue): boolean {
   return issue.status === "done" || issue.status === "cancelled";
 }
 
+function isInvokable(agent: Agent | null): agent is Agent {
+  return Boolean(agent) && !["terminated", "pending_approval", "paused"].includes(agent.status);
+}
+
 function freshDeliveryState(goalId: string): DeliveryState {
   return {
     version: 1,
@@ -159,7 +164,7 @@ function isDeliveryState(value: unknown): value is DeliveryState {
       typeof state.report.path === "string"
       && typeof state.report.commitSha === "string"
       && typeof state.report.summary === "string"
-      && typeof state.report.interactionId === "string"
+      && (state.report.evidence == null || typeof state.report.evidence === "string")
     ))
     && [
       "goal_registered",
@@ -292,7 +297,7 @@ export function createOperationPlugin() {
       const requireOrchestrator = async (agentId: string, companyId: string): Promise<Agent> => {
         const orchestratorRole = await getOrchestratorRole();
         const agent = await ctx.agents.get(agentId, companyId);
-        if (!agent || agent.status === "terminated" || agent.role !== orchestratorRole) {
+        if (!isInvokable(agent) || agent.role !== orchestratorRole) {
           throw new Error("Only the configured workflow orchestrator may perform this workflow step");
         }
         return agent;
@@ -302,7 +307,7 @@ export function createOperationPlugin() {
         if (preferredAgentId) return requireOrchestrator(preferredAgentId, companyId);
         const role = await getOrchestratorRole();
         const matches = (await ctx.agents.list({ companyId }))
-          .filter((agent) => agent.status !== "terminated" && agent.role === role);
+          .filter((agent) => isInvokable(agent) && agent.role === role);
         if (matches.length !== 1) throw new Error("Delivery workflow requires exactly one active orchestrator");
         return matches[0];
       };
@@ -324,7 +329,7 @@ export function createOperationPlugin() {
         const assigneeAgentId = stringParam(params, "assigneeAgentId");
         if (assigneeAgentId === actorId) throw new Error("A parent owner cannot review its own child Task");
         const assignee = await ctx.agents.get(assigneeAgentId, companyId);
-        if (!assignee || assignee.status === "terminated") throw new Error("Child assignee must be active");
+        if (!isInvokable(assignee)) throw new Error("Child assignee must be active and invokable");
 
         const blockedByIssueIds = Array.isArray(params.blockedByIssueIds)
           ? params.blockedByIssueIds.filter((value): value is string => typeof value === "string")
@@ -596,6 +601,13 @@ export function createOperationPlugin() {
       };
 
       const registerGoal = async (companyId: string, userId: string, params: Record<string, unknown>) => {
+        const activeGoalId = await ctx.state.get(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY));
+        if (typeof activeGoalId === "string") {
+          const active = await getDeliveryState(companyId, activeGoalId);
+          if (active && active.phase !== "completed") {
+            throw new Error("Another company Goal already has an active delivery workflow");
+          }
+        }
         const goal = await ctx.goals.create({
           companyId,
           title: stringParam(params, "title"),
@@ -604,8 +616,31 @@ export function createOperationPlugin() {
           status: "active",
         });
         await saveDeliveryState(companyId, freshDeliveryState(goal.id));
+        await ctx.state.set(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY), goal.id);
         ctx.logger.info("Delivery Goal registered", { companyId, goalId: goal.id, userId });
         return goal;
+      };
+
+      const adoptGoal = async (companyId: string, userId: string, params: Record<string, unknown>) => {
+        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
+        if (goal.level !== "company") throw new Error("Only a company Goal can enter delivery-control");
+        if (goal.status !== "active" && goal.status !== "planned") {
+          throw new Error("Only an active or planned company Goal can enter delivery-control");
+        }
+
+        const activeGoalId = await ctx.state.get(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY));
+        if (typeof activeGoalId === "string" && activeGoalId !== goal.id) {
+          const active = await getDeliveryState(companyId, activeGoalId);
+          if (active && active.phase !== "completed") {
+            throw new Error("Another company Goal already has an active delivery workflow");
+          }
+        }
+
+        const state = await getDeliveryState(companyId, goal.id) ?? freshDeliveryState(goal.id);
+        await saveDeliveryState(companyId, state);
+        await ctx.state.set(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY), goal.id);
+        ctx.logger.info("Existing Goal adopted into delivery-control", { companyId, goalId: goal.id, userId });
+        return { goal, state };
       };
 
       const proposeMilestone = async (companyId: string, agentId: string, params: Record<string, unknown>) => {
@@ -614,7 +649,10 @@ export function createOperationPlugin() {
         await requireOrchestrator(agentId, companyId);
         const current = await getDeliveryState(companyId, goal.id);
         if (!current) throw new Error("Register the Goal through delivery-control first");
-        if (current.milestoneId) throw new Error("This Goal already has a Milestone in progress");
+        if (current.milestoneId && current.phase !== "completed") {
+          throw new Error("This Goal already has a Milestone in progress");
+        }
+        const next = current.phase === "completed" ? freshDeliveryState(goal.id) : current;
 
         const milestone = await ctx.goals.create({
           companyId,
@@ -625,7 +663,7 @@ export function createOperationPlugin() {
           parentId: goal.id,
           ownerAgentId: agentId,
         });
-        await saveDeliveryState(companyId, { ...current, milestoneId: milestone.id, phase: "milestone_pending" });
+        await saveDeliveryState(companyId, { ...next, milestoneId: milestone.id, phase: "milestone_pending" });
         return milestone;
       };
 
@@ -647,7 +685,7 @@ export function createOperationPlugin() {
         if (!state?.milestoneId || state.phase !== "milestone_confirmed") throw new Error("Milestone must be human-confirmed before Root Task creation");
         const assigneeAgentId = stringParam(params, "assigneeAgentId");
         const assignee = await ctx.agents.get(assigneeAgentId, companyId);
-        if (!assignee || assignee.status === "terminated" || assignee.role === orchestrator.role) throw new Error("Root Task must be assigned to an active execution Agent");
+        if (!isInvokable(assignee) || assignee.role === orchestrator.role) throw new Error("Root Task must be assigned to an active execution Agent");
         const root = await ctx.issues.create({
           companyId,
           projectId: typeof params.projectId === "string" ? params.projectId : undefined,
@@ -681,7 +719,6 @@ export function createOperationPlugin() {
       const requestMilestoneReview = async (
         companyId: string,
         agentId: string,
-        runId: string | null,
         params: Record<string, unknown>,
       ) => {
         const goal = await requireGoal(stringParam(params, "goalId"), companyId);
@@ -701,81 +738,56 @@ export function createOperationPlugin() {
           if (state.report.path !== reportPath || state.report.commitSha !== commitSha || state.report.summary !== summary) {
             throw new Error("A different Milestone report is already awaiting confirmation");
           }
-          return { interactionId: state.report.interactionId, report: state.report, phase: state.phase };
+          return { report: state.report, phase: state.phase };
         }
         if (state.phase !== "executing") throw new Error("Milestone is not ready for a completion report");
         const root = await ctx.issues.get(state.rootTaskId, companyId);
         if (!root || root.status !== "in_review" || root.assigneeAgentId !== agentId) {
           throw new Error("Root Task must be in review with the workflow orchestrator");
         }
-        const milestone = await requireGoal(state.milestoneId, companyId);
         const detailsMarkdown = [
+          "## Board confirmation required",
+          "",
+          "An authenticated human must accept or reject this report in the Operation Control dashboard widget.",
+          "Agent calls cannot complete the Milestone.",
+          "",
           `- Report: \`${reportPath}\``,
           `- Git commit: \`${commitSha}\``,
           `- Summary: ${summary}`,
           evidence ? `\n## Evidence\n\n${evidence}` : "",
         ].filter(Boolean).join("\n");
-        const interaction = await ctx.issues.requestConfirmation(root.id, {
-          idempotencyKey: `milestone-report:${state.milestoneId}:${commitSha}`,
-          sourceRunId: runId,
-          title: `Milestone 완료 보고: ${milestone.title}`.slice(0, 240),
-          summary,
-          continuationPolicy: "wake_assignee",
-          payload: {
-            version: 1,
-            prompt: `Milestone '${milestone.title}'의 완료 보고를 승인하시겠습니까?`,
-            acceptLabel: "승인",
-            rejectLabel: "보완 요청",
-            rejectRequiresReason: true,
-            rejectReasonLabel: "보완이 필요한 이유",
-            detailsMarkdown,
-            supersedeOnUserComment: false,
-            target: {
-              type: "custom",
-              key: `milestone-report:${state.milestoneId}`,
-              revisionId: commitSha,
-              label: reportPath,
-            },
-          },
-        }, companyId, { authorAgentId: agentId });
-        const report: MilestoneReport = { path: reportPath, commitSha, summary, interactionId: interaction.id };
+        await ctx.issues.createComment(root.id, detailsMarkdown, companyId, { authorAgentId: agentId });
+        const report: MilestoneReport = { path: reportPath, commitSha, summary, evidence };
         await saveDeliveryState(companyId, { ...state, report, phase: "awaiting_human_confirmation" });
-        return { interactionId: interaction.id, report, phase: "awaiting_human_confirmation" };
+        return { report, phase: "awaiting_human_confirmation" };
       };
 
       const recordMilestoneConfirmation = async (
         companyId: string,
-        agentId: string,
-        runId: string | null,
+        userId: string,
         params: Record<string, unknown>,
       ) => {
         const goal = await requireGoal(stringParam(params, "goalId"), companyId);
-        await requireOrchestrator(agentId, companyId);
         const state = await getDeliveryState(companyId, goal.id);
         if (!state?.milestoneId || !state.rootTaskId || state.phase !== "awaiting_human_confirmation" || !state.report) {
-          throw new Error("Milestone is not awaiting a Paperclip confirmation");
-        }
-        if (stringParam(params, "interactionId") !== state.report.interactionId) {
-          throw new Error("interactionId does not match the pending Milestone report");
+          throw new Error("Milestone is not awaiting direct Board confirmation");
         }
         const root = await ctx.issues.get(state.rootTaskId, companyId);
-        if (!root || root.status !== "in_review" || root.assigneeAgentId !== agentId) {
+        if (!root || root.status !== "in_review" || root.assigneeAgentId !== state.orchestratorAgentId) {
           throw new Error("Root Task must still be assigned to the workflow orchestrator");
         }
         const decision = params.decision;
         if (decision !== "accepted" && decision !== "rejected") throw new Error("decision must be accepted or rejected");
 
-        // ponytail: the current SDK can create but not read interaction results; trust the configured
-        // orchestrator's Paperclip continuation until interaction read/events are added to the SDK.
         if (decision === "accepted") {
-          await ctx.issues.update(root.id, { status: "done" }, companyId, { actorAgentId: agentId, actorRunId: runId });
+          await ctx.issues.update(root.id, { status: "done" }, companyId, { actorUserId: userId });
           const milestone = await ctx.goals.update(state.milestoneId, { status: "achieved" }, companyId);
           await saveDeliveryState(companyId, { ...state, phase: "completed" });
-          ctx.logger.info("Milestone completed after Paperclip confirmation", {
+          ctx.logger.info("Milestone completed by direct Board confirmation", {
             companyId,
             goalId: goal.id,
             milestoneId: state.milestoneId,
-            interactionId: state.report.interactionId,
+            userId,
           });
           return { decision, milestone };
         }
@@ -784,11 +796,11 @@ export function createOperationPlugin() {
         const assigneeAgentId = stringParam(params, "assigneeAgentId");
         const rootOwnerAgentId = state.rootOwnerAgentId;
         if (!rootOwnerAgentId) throw new Error("Original Root Task owner is unavailable");
-        if (assigneeAgentId === rootOwnerAgentId || assigneeAgentId === agentId) {
+        if (assigneeAgentId === rootOwnerAgentId || assigneeAgentId === state.orchestratorAgentId) {
           throw new Error("Milestone remediation must have an independent executor");
         }
         const assignee = await ctx.agents.get(assigneeAgentId, companyId);
-        if (!assignee || assignee.status === "terminated") throw new Error("Remediation assignee must be active");
+        if (!isInvokable(assignee)) throw new Error("Remediation assignee must be active and invokable");
         const remediation = await ctx.issues.create({
           companyId,
           parentId: root.id,
@@ -801,7 +813,7 @@ export function createOperationPlugin() {
           assigneeAgentId,
           originKind: "plugin:local.operation-control:delivery-remediation",
           originId: `${root.id}:human-rejection:${state.rejectionCount + 1}`,
-          actor: { actorAgentId: agentId, actorRunId: runId },
+          actor: { actorUserId: userId },
         });
         await ctx.state.set(deliveryNodeKey(remediation.id), {
           rootTaskId: root.id,
@@ -813,7 +825,7 @@ export function createOperationPlugin() {
           root.id,
           { status: "in_progress", assigneeAgentId: rootOwnerAgentId },
           companyId,
-          { actorAgentId: agentId, actorRunId: runId },
+          { actorUserId: userId },
         );
         await saveDeliveryState(companyId, {
           ...state,
@@ -825,8 +837,7 @@ export function createOperationPlugin() {
           reason: "Board requested Milestone remediation.",
           contextSource: "operation-control:milestone-rejection",
           idempotencyKey: `${remediation.id}:milestone-rejection`,
-          actorAgentId: agentId,
-          actorRunId: runId,
+          actorUserId: userId,
         });
         return { decision, remediationIssueId: remediation.id, phase: "executing" };
       };
@@ -837,7 +848,8 @@ export function createOperationPlugin() {
         const state = await getDeliveryState(companyId, goalId);
         const milestone = state?.milestoneId ? await ctx.goals.get(state.milestoneId, companyId) : null;
         const root = state?.rootTaskId ? await ctx.issues.get(state.rootTaskId, companyId) : null;
-        return { state, milestone, root };
+        const goal = await ctx.goals.get(goalId, companyId);
+        return { state, goal, milestone, root };
       };
 
       const handleIssueCreated = async (event: PluginEvent) => {
@@ -886,6 +898,11 @@ export function createOperationPlugin() {
         return serialized(companyId, () => registerGoal(companyId, actorUser(context), params));
       });
 
+      ctx.actions.register("adopt-goal", async (params, context) => {
+        const companyId = readCompanyId(params, context.companyId);
+        return serialized(companyId, () => adoptGoal(companyId, actorUser(context), params));
+      });
+
       ctx.actions.register("propose-milestone", async (params, context) => {
         const companyId = readCompanyId(params, context.companyId);
         const agentId = actorAgentId(context);
@@ -913,6 +930,15 @@ export function createOperationPlugin() {
         const companyId = readCompanyId(params, context.companyId);
         const agentId = actorAgentId(context);
         return serialized(companyId, () => reviewNode(companyId, agentId, context.actor.runId, params));
+      });
+
+      ctx.actions.register("record-milestone-confirmation", async (params, context) => {
+        const companyId = readCompanyId(params, context.companyId);
+        return serialized(companyId, () => recordMilestoneConfirmation(
+          companyId,
+          actorUser(context),
+          params,
+        ));
       });
 
       ctx.tools.register(
@@ -1044,35 +1070,6 @@ export function createOperationPlugin() {
           const result = await serialized(runContext.companyId, () => requestMilestoneReview(
             runContext.companyId,
             runContext.agentId,
-            runContext.runId,
-            params as Record<string, unknown>,
-          ));
-          return { content: JSON.stringify(result), data: result };
-        },
-      );
-
-      ctx.tools.register(
-        "record-milestone-confirmation",
-        {
-          displayName: "Record Milestone Confirmation",
-          description: "Apply the Board response from a Paperclip Milestone confirmation continuation.",
-          parametersSchema: {
-            type: "object",
-            properties: {
-              goalId: { type: "string" },
-              interactionId: { type: "string" },
-              decision: { type: "string", enum: ["accepted", "rejected"] },
-              reason: { type: "string" },
-              assigneeAgentId: { type: "string" },
-            },
-            required: ["goalId", "interactionId", "decision"],
-          },
-        },
-        async (params, runContext: ToolRunContext) => {
-          const result = await serialized(runContext.companyId, () => recordMilestoneConfirmation(
-            runContext.companyId,
-            runContext.agentId,
-            runContext.runId,
             params as Record<string, unknown>,
           ));
           return { content: JSON.stringify(result), data: result };
@@ -1085,15 +1082,22 @@ export function createOperationPlugin() {
 
       ctx.data.register("operation-control", async (params) => {
         const companyId = readCompanyId(params);
-        const [state, agents, artifactIssueId] = await Promise.all([
+        const [state, agents, artifactIssueId, activeGoalId, companyGoals] = await Promise.all([
           getState(companyId),
           ctx.agents.list({ companyId }),
           ctx.state.get(companyStateKey(companyId, ARTIFACT_ISSUE_KEY)),
+          ctx.state.get(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY)),
+          ctx.goals.list({ companyId, level: "company", limit: 100 }),
         ]);
+        const delivery = typeof activeGoalId === "string"
+          ? await deliveryData({ companyId, goalId: activeGoalId })
+          : null;
         return {
           state,
-          agents: agents.map(({ id, name, title, status }: Agent) => ({ id, name, title, status })),
+          agents: agents.map(({ id, name, title, role, status }: Agent) => ({ id, name, title, role, status })),
           artifactIssueId: typeof artifactIssueId === "string" ? artifactIssueId : null,
+          companyGoals: companyGoals.map(({ id, title, status }: Goal) => ({ id, title, status })),
+          delivery,
         };
       });
 

@@ -26,8 +26,8 @@
 - 실행 Role의 근거가 부족하면 상태를 전환하지 않고 부족한 조건을 명시해 돌려보낸다.
 - Agent 수 변경이 필요하면 backlog, 예산, review와 workspace 격리를 확인해 Board 승인 요청을 만든다.
 - Root review가 끝나면 Root 담당자가 `docs/milestones/<milestone-id>.md`를 commit했는지 확인한다. 보고서를 직접 작성하거나 제품 workspace를 수정하지 않는다.
-- 보고서 경로, full commit SHA, 요약과 검증 근거로 `request-milestone-review`를 호출해 Paperclip confirm request를 보낸다.
-- Confirm 응답으로 다시 호출되면 전달된 interaction ID와 `accepted`/`rejected` 상태를 그대로 `record-milestone-confirmation`에 기록한다. `rejected`이면 Board 사유와 Root 담당자·Product Steward가 아닌 실행 Agent의 `assigneeAgentId`를 함께 넘긴다. 거절·범위 변경, 예산 또는 고위험 결정은 Board에 보고한다.
+- 보고서 경로, full commit SHA, 요약과 검증 근거로 `request-milestone-review`를 호출해 Operation Control의 Board 검토 대기 상태로 전환한다.
+- 최종 승인·거절을 대신 호출하거나 전달하지 않는다. Board가 dashboard에서 직접 결정할 때까지 멈춘다. 거절 뒤 생성된 보완 Task는 독립 실행 Agent에게 맡기고, 범위 변경·예산 또는 고위험 결정은 Board에 보고한다.
 
 ## 보고
 

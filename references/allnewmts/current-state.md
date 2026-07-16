@@ -1,6 +1,6 @@
 # AllNewMTS Company 현재 구성
 
-확인 기준: 2026-07-15, Paperclip local instance `127.0.0.1:3100`, Paperclip `2026.707.0`.
+확인 기준: 2026-07-16, Paperclip local instance `127.0.0.1:3100`, Paperclip `2026.707.0`.
 
 이 문서는 범용 Blueprint를 적용한 현재값의 빠른 요약이다. 목표 표준은 [AI Company Blueprint](../../blueprint/README.md), 상세 현재값은 [AllNewMTS Reference](README.md)에 있다.
 
@@ -50,7 +50,7 @@ Product Steward
 - 사람의 요청은 Goal, Milestone 필수 작업은 `todo`, 선택 작업은 active Task tree 밖의 `backlog`
 - Backlog `todo` 승격은 Product Steward, 근거가 있는 취소는 Sweeper
 
-isolated workspace는 정책상 선택할 수 있지만 현재 AllNewMTS Git 저장소에 `HEAD`가 없어 실행 불가하다.
+AllNewMTS 제품 저장소는 초기 Expo scaffold를 `01fddaf6e4f0b23457c10a442684d20e578a9599`에 commit해 isolated workspace와 Git Milestone 보고서의 로컬 기준점을 갖는다.
 
 ## Goal 구조
 
@@ -65,9 +65,10 @@ isolated workspace는 정책상 선택할 수 있지만 현재 AllNewMTS Git 저
 | 항목 | 값 |
 |---|---|
 | Plugin key | `local.operation-control` |
-| 버전 / 상태 | `0.1.0` / ready, healthy |
+| 버전 / 상태 | `0.2.0` / ready, healthy |
 | Company mode | `normal` |
-| Milestone 완료 gate | Git 보고서 + Paperclip `request_confirmation` |
+| Delivery state | Company Goal `goal_registered`, 아직 plugin Milestone·Root Task 없음 |
+| Milestone 완료 gate | Git 보고서 + dashboard의 인증된 Board 직접 결정 |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
 | Backlog Sweep Routine | active, Sweeper 담당, 수동/API 실행, schedule 없음 |

@@ -1,6 +1,6 @@
 # AllNewMTS Reference
 
-이 문서는 [범용 AI Company Blueprint](../../blueprint/README.md)를 Paperclip `2026.707.0` 제약에 맞춰 적용한 실제 스냅샷이다. `http://127.0.0.1:3100`의 AllNewMTS Company를 2026-07-15에 API로 다시 확인한 현재값이며, 목표 표준 자체는 아니다.
+이 문서는 [범용 AI Company Blueprint](../../blueprint/README.md)를 Paperclip `2026.707.0` 제약에 맞춰 적용한 실제 스냅샷이다. `http://127.0.0.1:3100`의 AllNewMTS Company를 2026-07-16에 API로 다시 확인한 현재값이며, 목표 표준 자체는 아니다.
 
 ## Company Charter
 
@@ -72,7 +72,7 @@ Company Goal은 **iOS/Android 기반 SmartFormDe 시스템을 React Native Expo 
 | Issue override | 허용 |
 | 원본 | `/Users/chanheekim/Dev/Plus`, `/Users/chanheekim/Dev/mts_screen` 읽기 전용 |
 
-shared workspace writer는 동시에 한 명만 허용한다. isolated workspace override는 설정상 허용되지만 AllNewMTS에 Git `HEAD`가 아직 없어 현재 실행할 수 없다. 이 기간의 Prototyper는 Issue Document, attachment 또는 work product만 만든다.
+shared workspace writer는 동시에 한 명만 허용한다. isolated workspace override는 설정상 허용되며 AllNewMTS 초기 Expo scaffold의 baseline commit `01fddaf6e4f0b23457c10a442684d20e578a9599`부터 사용할 수 있다.
 
 ## Delivery 규칙
 
@@ -85,7 +85,7 @@ shared workspace writer는 동시에 한 명만 허용한다. isolated workspace
 - Goal·고위험 전환은 Board approval stage를 추가한다.
 - Prototyper 결과는 keep 또는 kill하며 keep된 결과만 Builder로 넘긴다.
 - Root 담당자는 `docs/milestones/<milestone-id>.md`를 commit하고 Product Steward는 full commit SHA를 확인한다.
-- Product Steward는 Git 보고서를 대상으로 Paperclip `request_confirmation`을 보내고 Board 응답 뒤에만 Milestone을 완료한다.
+- Product Steward는 Git 보고서를 Operation Control에 제출하고, 인증된 Board 사용자가 dashboard에서 직접 결정한 뒤에만 Milestone이 완료된다. Agent에게 최종 결정 도구는 노출하지 않는다.
 - shared workspace의 제품 writer는 한 번에 한 명이다.
 
 범용 상태 전이와 Task contract는 [Delivery Lifecycle](../../blueprint/delivery-lifecycle.md)에 정의한다.
@@ -96,7 +96,8 @@ shared workspace writer는 동시에 한 명만 허용한다. isolated workspace
 |---|---|
 | Routine | `Backlog Sweep`, active, Sweeper 담당, 수동/API 실행, schedule 없음 |
 | Pipeline | 없음 |
-| Operation Control | `local.operation-control` 0.1.0, ready/healthy |
+| Operation Control | `local.operation-control` 0.2.0, ready/healthy |
+| Controlled delivery | Company Goal `goal_registered`, plugin Milestone·Root Task 없음 |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
 

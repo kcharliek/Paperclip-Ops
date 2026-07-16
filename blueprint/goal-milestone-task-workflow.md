@@ -7,7 +7,7 @@
 3. 사람이 Milestone을 확인하면 Agent가 Root Task를 만들고 실행을 시작한다.
 4. Leaf Task가 끝나면 상위 Node Task 담당자가 확인한다.
 5. Root Task 담당자가 완료 근거를 `docs/milestones/<milestone-id>.md`에 기록해 Git에 commit한다.
-6. Product Steward가 보고서와 commit SHA를 확인하고 Paperclip confirm request로 사람에게 최종 확인을 요청한다.
+6. Product Steward가 보고서와 commit SHA를 Operation Control에 제출하고, 인증된 Board 사용자가 dashboard에서 직접 최종 확인한다.
 
 ## 상태와 권한
 
@@ -62,7 +62,7 @@ Root Task
        └─ all sibling nodes done → Root review
               ↓
         Git Milestone report
-              ↓ Paperclip confirm / reject
+              ↓ Board dashboard accept / reject
 ```
 
 Node review 또는 Root review가 거절되면 다음만 수행한다.
@@ -88,7 +88,7 @@ Milestone 최종 확인이 거절되면 Product Steward가 거절 사유를 Root
 | sibling 순서 | `blockedByIssueIds` |
 | leaf 확인 | 부모 담당자의 완료 comment와 evidence |
 | Node/Root review | 부모 Task의 `executionPolicy` `review` stage |
-| 인간 Milestone 확인 | Root Task의 `request_confirmation`, 대상 revision은 보고서 Git commit SHA |
+| 인간 Milestone 확인 | Operation Control dashboard의 인증된 Board action, 대상 revision은 보고서 Git commit SHA |
 | 거절 재진입 | 기존 child 재오픈 대신 보완 child 생성 |
 | Backlog 정리 | Sweeper에게 배정된 on-demand `Backlog Sweep` Routine run |
 
@@ -100,7 +100,6 @@ Root 담당 Agent는 Root review 전에 제품 저장소의 `docs/milestones/<mi
 # <Milestone title>
 
 - Milestone: <milestone id>
-- Git commit: <full commit SHA>
 - 완료 결과: <완료 기준별 결과>
 - 검증: <명령과 결과>
 - 영향 범위: <변경된 사용자·시스템 범위>
@@ -108,7 +107,7 @@ Root 담당 Agent는 Root review 전에 제품 저장소의 `docs/milestones/<mi
 - 롤백: <복구 방법>
 ```
 
-Git Markdown이 원본이다. Paperclip confirm request는 같은 내용을 별도 편집하지 않고 요약, 파일 경로와 full commit SHA를 표시한다. Product Steward는 보고서를 직접 작성하거나 제품 workspace를 수정하지 않고 commit에 포함됐는지만 확인한다. Confirm이 거절되면 기존 보고서를 덮어쓰지 않고 보완 commit을 만든 뒤 새 SHA로 다시 요청한다.
+Git Markdown이 원본이다. 보고서가 자기 자신을 포함한 commit SHA를 기록하는 순환 조건은 두지 않는다. Product Steward가 제출한 full commit SHA와 보고서 경로를 Operation Control dashboard가 함께 표시한다. Product Steward는 보고서를 직접 작성하거나 제품 workspace를 수정하지 않고 commit에 포함됐는지만 확인한다. Board가 거절하면 기존 보고서를 덮어쓰지 않고 보완 commit을 만든 뒤 새 SHA로 다시 요청한다.
 
 Backlog description에는 최소한 다음을 기록한다.
 
@@ -139,7 +138,7 @@ Backlog description에는 최소한 다음을 기록한다.
 ## 책임 경계
 
 - 사람: Goal 등록, Milestone 확인·거절, 범위·예산·고위험 결정, 최종 방향.
-- Product Steward: Milestone 초안, Root Task 생성, 실행 Agent 배정, tree 진행 조정, Git 보고서 확인과 Paperclip confirm request.
+- Product Steward: Milestone 초안, Root Task 생성, 실행 Agent 배정, tree 진행 조정, Git 보고서를 Operation Control에 제출. 최종 결정을 대신 기록하지 않는다.
 - Node 담당 Agent: child 분해, leaf 실행 확인, Node review 제출, 거절된 Node의 보완 child 생성.
 - 실행 Agent: 할당된 leaf 또는 child 하나를 수행하고 evidence를 남긴다. Root 담당자는 Milestone 완료 보고서를 commit한다. Goal, Milestone 상태와 sibling 범위를 바꾸지 않는다.
 

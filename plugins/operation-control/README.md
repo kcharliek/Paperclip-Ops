@@ -10,21 +10,22 @@ Company-wide maintenance control and Goal → Milestone → Task delivery gates 
 
 ## Delivery control
 
-The plugin exposes `delivery-control` actions for the controlled path:
+The plugin exposes a controlled path:
 
-`register-goal` → `propose-milestone` → `confirm-milestone` → `create-root-task` → `create-child-task` → `review-node` → `request-milestone-review` → `record-milestone-confirmation`.
+`adopt-goal` → `propose-milestone` → `confirm-milestone` → `create-root-task` → `create-child-task` → `review-node` → `request-milestone-review` → direct Board decision.
 
-- Goal registration and Milestone confirmation require a human actor.
+- Adopting an existing company Goal and both Milestone decisions require a human actor.
 - Milestone proposal and Root Task creation require an Agent whose role matches the configured `orchestratorRole`.
 - Child creation requires the parent owner, an independent executor, and sibling blockers are validated.
 - Node rejection creates a remediation child. Human Milestone rejection also creates a remediation child below the Root Task.
-- Root approval returns the Task to the configured orchestrator. The orchestrator verifies `docs/milestones/<milestone-id>.md` and its full Git commit SHA before sending a native Paperclip `request_confirmation`.
-- Paperclip wakes the orchestrator when the Board responds. The orchestrator records that exact interaction ID and response through `record-milestone-confirmation`; acceptance completes the Milestone and rejection reopens delivery with a remediation child.
+- Root approval returns the Task to the configured orchestrator. The orchestrator submits `docs/milestones/<milestone-id>.md`, its full Git commit SHA, summary and evidence for Board review.
+- Only the authenticated Board action in the dashboard widget can accept or reject that report. Agents have no final-decision tool.
+- Acceptance completes the Milestone. Rejection reopens delivery with an independently assigned remediation child. After completion the orchestrator can propose the next Milestone under the same company Goal.
 - Direct child creation and direct completion of a parent with children are cancelled/reopened by the event guard.
 
-Agents receive `propose-milestone`, `create-root-task`, `create-child-task`, `review-node`, `request-milestone-review`, and `record-milestone-confirmation` tools. Keep worker Agents' normal task-assignment permission disabled; these plugin tools are the narrow delivery path.
+Agents receive only `propose-milestone`, `create-root-task`, `create-child-task`, `review-node`, and `request-milestone-review`. Keep worker Agents' normal task-assignment permission disabled; these plugin tools are the narrow delivery path.
 
-The current Paperclip SDK can create an interaction but cannot read its resolved state or subscribe to an interaction-resolution event. Until that SDK surface exists, `record-milestone-confirmation` trusts only the configured orchestrator to relay the Board continuation payload; the pending interaction ID must match plugin state.
+The current Paperclip plugin SDK cannot read a resolved interaction or mutate an Issue's native execution policy. The plugin therefore uses a direct, authenticated Board action for the final Milestone gate instead of trusting an Agent to relay a human response.
 
 Configure the workflow owner through the plugin instance configuration, for example `{ "orchestratorRole": "ceo" }`. The plugin does not infer an owner from an Agent name or a hardcoded role.
 
