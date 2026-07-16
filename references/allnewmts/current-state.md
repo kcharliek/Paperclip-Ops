@@ -76,7 +76,7 @@ AllNewMTS 제품 저장소는 초기 Expo scaffold를 `01fddaf6e4f0b23457c10a442
 | Company run ceiling | 시간당 20회; 초과 run 즉시 취소 후 전체 Agent maintenance, Board resume 시 현재 시간 창 reset |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
-| Company Integrity Check Routine | active, Maintainer 담당, 6시간마다, `skip_if_active` / `skip_missed`; 다음 schedule 2026-07-16 18:00 KST |
+| Company Integrity Check Routine | active, Maintainer 담당, 6시간마다, `skip_if_active` / `skip_missed`; 첫 schedule `ALL-35` 완료, 다음 schedule 2026-07-17 00:00 KST |
 | Backlog Sweep Routine | active, Sweeper 담당, 매주 월요일 09:30 KST, `skip_if_active` / `skip_missed` |
 | Paperclip DB backup | 공식 자동 backup 활성화, 60분 주기, health `ok`; 보존은 daily 7일·weekly 4주·monthly 1개월 |
 
@@ -84,7 +84,7 @@ AllNewMTS 제품 저장소는 초기 Expo scaffold를 `01fddaf6e4f0b23457c10a442
 
 Backlog Sweep의 첫 schedule 실행 예정 시각은 2026-07-20 09:30 KST다. 수동 live 검증에서 `ALL-33`은 미확정 Milestone을 완료 근거로 오판했지만 native 권한이 취소를 막아 Backlog 변경 없이 `blocked`와 failure reason을 남겼고, Board가 무변경을 확인한 뒤 Task만 정리했다. 보정된 `ALL-34`는 유지 0, 취소 0, Product Steward 분류 요청 10으로 interaction 없이 `done` 완료했다. 첫 schedule 실행은 아직 관측 전이다.
 
-Company Integrity Check는 2026-07-16 수동 실행 `ALL-28`에서 `integrity: healthy`로 완료됐다. 공식 scheduler의 첫 실행은 2026-07-16 18:00 KST라 아직 관측 전이다.
+Company Integrity Check의 첫 schedule은 2026-07-16 18:00 KST에 `ALL-35`로 dispatch되어 `done`과 succeeded를 확인했다. health/backup, org chain, Routine과 timeout run은 정상이었지만 Operation Control inspect action이 두 번 `No worker registered`를 반환해 `integrity: degraded`로 종료했다. worker는 이후 다시 응답했고 두 run 합계는 input 498,962, cached input 432,640, output 4,955 tokens였다.
 
 Pipeline은 아직 없다. 남은 운영 차이는 [drift](drift.md)에 기록한다.
 

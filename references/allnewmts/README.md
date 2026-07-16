@@ -110,7 +110,7 @@ Operation Control은 Paperclip Agent 한 명만 owner로 유지할 수 있다. M
 
 0.6.2의 Board 복구 action은 planning 단계에서 단일 orchestration Task를 다시 깨우거나 누락 Task를 재생성하며, 종료된 이전 recovery는 새 시도를 막지 않는다. Issue create·wakeup 실패 주입 test를 통과했고, 현재 `milestone_pending` live 호출은 `human_gate`로 무변경 종료되어 사람 확인을 우회하지 않았다.
 
-`Company Integrity Check`는 read-only 공식 Routine이다. 2026-07-16 수동 실행 `ALL-28`에서 health, backup, operation mode·run budget, Agent org chain, Routine schedule과 timeout run을 확인해 `integrity: healthy`로 종료했다.
+`Company Integrity Check`는 read-only 공식 Routine이다. 2026-07-16 수동 실행 `ALL-28`은 `integrity: healthy`였고, 첫 schedule `ALL-35`는 health/backup, org chain, Routine과 timeout run은 정상이었지만 Operation Control inspect가 두 번 `No worker registered`를 반환해 `integrity: degraded`로 종료했다. worker는 이후 다시 응답했다.
 
 `Backlog Sweep`은 수동 live 검증에서 권한 경계와 완료 근거를 재조정했다. `ALL-33`은 미확정 Milestone을 완료 근거로 오판했지만 native 권한이 실제 취소를 막아 `blocked`와 failure reason을 남겼고, Board가 무변경을 확인한 뒤 Task만 정리했다. 보정된 `ALL-34`는 10건 모두 Product Steward 분류 요청으로 기록하고 interaction 없이 `done`으로 끝났다.
 

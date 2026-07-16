@@ -29,7 +29,7 @@
 
 - 개선 분류 label: `blueprint`, `plugin`, `local-profile`, `paperclip-gap`, `maintenance`
 - delivery label: `role:system-auditor`, `role:builder`, `role:sweeper`, `role:maintainer`
-- Operation Control: `normal`, `drain`, 시간당 20 run, delivery state는 아직 없음
+- Operation Control: `normal`, `drain`, 시간당 20 run, `milestone_pending`
 - System Improvement Review: `5ec9d58a-6317-4192-9f56-cebe3aaa56de`, System Auditor, 매주 월요일 10:00 KST, `skip_if_active` / `skip_missed`
 - Company Integrity Check: `0ecd5074-9fc1-4115-81e8-f0af753a1f1b`, Maintainer, 6시간마다, `skip_if_active` / `skip_missed`
 
@@ -44,3 +44,11 @@
 | `PAP-4` | `plugin` | Operation Control live 누락 Task 복구 검증 |
 
 run usage는 input 592,505, cached input 520,704, output 7,626 tokens였다. 신규 3, 중복 0, 보류 0을 기록했고 Ops 저장소와 소비 Company는 수정하지 않았다.
+
+## Drift intake와 첫 Milestone
+
+AllNewMTS와 Paperclip Ops drift는 `PAP-2..13`에 전부 등록했고, AllNewMTS 첫 Integrity schedule의 일시적 worker 미등록은 `PAP-15`가 추적한다. 모든 항목은 active tree 밖의 `backlog`다.
+
+Board가 Company Goal을 delivery-control에 adopt한 뒤 `PAP-14` Ops Steward run이 `Operation Control live recovery 검증 Milestone` 초안 `0c24a09a-caf2-4ccf-9a53-72c17248d9fd`를 제출했다. 필수 범위는 `PAP-4` 하나이고 나머지는 선택 Backlog로 유지했다. 현재 phase는 `milestone_pending`이며 사람 확인 전이라 Root Task는 없다.
+
+`PAP-14`는 succeeded와 `done`으로 종료했고 usage는 input 243,642, cached input 193,152, output 5,036 tokens였다.
