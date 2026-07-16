@@ -26,7 +26,7 @@ Board (Human owner)
 | Organization | 표준 Role별 Agent 이름, 수, Paperclip role mapping과 보고선 |
 | Delivery | Company Goal, `team` Goal Milestone, active Milestone 하나, Project와 Role label |
 | Runtime | writable workspace, read-only sources, model, concurrency와 격리 가능 여부 |
-| Operations | Maintainer, `drain` 또는 `immediate`, 신뢰성 기준 |
+| Operations | Maintainer, `drain` 또는 `immediate`, 시간당 Company run 상한, 신뢰성 기준 |
 
 ## 공통 실행 흐름
 

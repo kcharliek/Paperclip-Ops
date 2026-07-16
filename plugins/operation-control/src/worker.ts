@@ -24,6 +24,7 @@ export interface OperationState {
 }
 
 const STATE_KEY = "operation-state";
+const HOURLY_RUN_BUDGET_KEY = "hourly-run-budget";
 const ARTIFACT_ISSUE_KEY = "operation-state-issue-id";
 const PAUSED_MARKER_KEY = "paused-by-operation-control";
 const ARTIFACT_ORIGIN = "plugin:operation-control" as const;
@@ -68,6 +69,12 @@ interface DeliveryNode {
   parentId: string | null;
 }
 
+interface HourlyRunBudget {
+  version: 1;
+  windowStartedAt: string;
+  count: number;
+}
+
 const normalState = (): OperationState => ({
   version: 1,
   mode: "normal",
@@ -80,6 +87,10 @@ const normalState = (): OperationState => ({
 
 function companyStateKey(companyId: string, stateKey: string) {
   return { scopeKind: "company" as const, scopeId: companyId, stateKey };
+}
+
+function currentHourStartedAt(): string {
+  return new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000).toISOString();
 }
 
 function agentMarkerKey(agentId: string) {
@@ -240,6 +251,32 @@ export function createOperationPlugin() {
       const getDeliveryState = async (companyId: string, goalId: string): Promise<DeliveryState | null> => {
         const value = await ctx.state.get(deliveryStateKey(companyId, goalId));
         return isDeliveryState(value) ? value : null;
+      };
+
+      const getHourlyRunBudget = async (companyId: string) => {
+        const config = await ctx.config.get();
+        const configuredLimit = config.maxRunsPerHour;
+        const limit = typeof configuredLimit === "number" && Number.isInteger(configuredLimit) && configuredLimit > 0
+          ? configuredLimit
+          : 0;
+        const windowStartedAt = currentHourStartedAt();
+        const value = await ctx.state.get(companyStateKey(companyId, HOURLY_RUN_BUDGET_KEY));
+        const saved = value as Partial<HourlyRunBudget> | null;
+        const count = saved?.version === 1
+          && saved.windowStartedAt === windowStartedAt
+          && typeof saved.count === "number"
+          && Number.isInteger(saved.count)
+          && saved.count >= 0
+          ? saved.count
+          : 0;
+        return { version: 1 as const, windowStartedAt, count, limit };
+      };
+
+      const recordRunStart = async (companyId: string) => {
+        const budget = await getHourlyRunBudget(companyId);
+        const next = { version: 1 as const, windowStartedAt: budget.windowStartedAt, count: budget.count + 1 };
+        await ctx.state.set(companyStateKey(companyId, HOURLY_RUN_BUDGET_KEY), next);
+        return { ...next, limit: budget.limit };
       };
 
       const saveDeliveryState = async (
@@ -599,6 +636,14 @@ export function createOperationPlugin() {
           changedAt: new Date().toISOString(),
         };
         await saveState(companyId, state);
+        const budget = await getHourlyRunBudget(companyId);
+        if (budget.limit > 0) {
+          await ctx.state.set(companyStateKey(companyId, HOURLY_RUN_BUDGET_KEY), {
+            version: 1,
+            windowStartedAt: budget.windowStartedAt,
+            count: 0,
+          } satisfies HourlyRunBudget);
+        }
 
         const agents = await ctx.agents.list({ companyId });
         for (const agent of agents) {
@@ -613,6 +658,25 @@ export function createOperationPlugin() {
       const handleStarted = async (event: PluginEvent) => {
         const agentId = readAgentId(event);
         if (!agentId) return;
+        const budget = await recordRunStart(event.companyId);
+        if (budget.limit > 0 && budget.count > budget.limit) {
+          const existing = await getState(event.companyId);
+          if (existing.mode === "normal") {
+            const requestedAt = new Date().toISOString();
+            const stopped: OperationState = {
+              version: 1,
+              mode: "maintenance",
+              stopPolicy: "immediate",
+              ownerAgentId: null,
+              reason: `Hourly run limit exceeded (${budget.count}/${budget.limit})`,
+              requestedAt,
+              changedAt: requestedAt,
+            };
+            await saveState(event.companyId, stopped);
+            await reconcile(event.companyId, stopped, true);
+          }
+          return;
+        }
         const state = await getState(event.companyId);
         if (state.mode === "normal" || agentId === state.ownerAgentId) return;
 
@@ -1122,8 +1186,9 @@ export function createOperationPlugin() {
 
       ctx.data.register("operation-control", async (params) => {
         const companyId = readCompanyId(params);
-        const [state, agents, artifactIssueId, activeGoalId, companyGoals] = await Promise.all([
+        const [state, runBudget, agents, artifactIssueId, activeGoalId, companyGoals] = await Promise.all([
           getState(companyId),
+          getHourlyRunBudget(companyId),
           ctx.agents.list({ companyId }),
           ctx.state.get(companyStateKey(companyId, ARTIFACT_ISSUE_KEY)),
           ctx.state.get(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY)),
@@ -1134,6 +1199,7 @@ export function createOperationPlugin() {
           : null;
         return {
           state,
+          runBudget,
           agents: agents.map(({ id, name, title, role, status }: Agent) => ({ id, name, title, role, status })),
           artifactIssueId: typeof artifactIssueId === "string" ? artifactIssueId : null,
           companyGoals: companyGoals.map(({ id, title, status }: Goal) => ({ id, title, status })),

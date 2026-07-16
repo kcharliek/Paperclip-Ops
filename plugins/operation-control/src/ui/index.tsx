@@ -41,6 +41,11 @@ type ControlData = {
     ownerAgentId: string | null;
     reason: string | null;
   };
+  runBudget: {
+    windowStartedAt: string;
+    count: number;
+    limit: number;
+  };
   agents: AgentSummary[];
   artifactIssueId: string | null;
   companyGoals: GoalSummary[];
@@ -125,6 +130,10 @@ export function OperationControlWidget({ context }: PluginWidgetProps) {
 
       {data.state.mode === "holding" && (
         <div>{runningCount} agent(s) are finishing their current work.</div>
+      )}
+
+      {data.runBudget.limit > 0 && (
+        <small>Hourly run budget: {data.runBudget.count} / {data.runBudget.limit}</small>
       )}
 
       <label style={fieldStyle}>

@@ -53,7 +53,7 @@ const agent = (id, name, status, role = "engineer") => ({
 });
 
 const harness = createTestHarness({ manifest });
-harness.setConfig({ orchestratorRole: "ceo" });
+harness.setConfig({ orchestratorRole: "ceo", maxRunsPerHour: 2 });
 harness.seed({
   companies: [{
     id: companyId,
@@ -137,11 +137,30 @@ data = await harness.getData("operation-control", { companyId });
 assert.equal(data.state.mode, "maintenance");
 assert.equal(data.agents.find((item) => item.id === workerId).status, "paused");
 
+await harness.performAction("resume-normal", {}, { companyId });
+harness.seed({ agents: [agent(workerId, "Engineer", "running")] });
+await harness.emit("agent.run.started", { agentId: workerId }, { companyId });
+await harness.emit("agent.run.started", { agentId: workerId }, { companyId });
+data = await harness.getData("operation-control", { companyId });
+assert.equal(data.state.mode, "normal");
+assert.equal(data.runBudget.count, 2);
+assert.equal(data.runBudget.limit, 2);
+await harness.emit("agent.run.started", { agentId: workerId }, { companyId });
+data = await harness.getData("operation-control", { companyId });
+assert.equal(data.state.mode, "maintenance");
+assert.match(data.state.reason, /Hourly run limit exceeded \(3\/2\)/);
+assert.equal(data.agents.find((item) => item.id === workerId).status, "paused");
+assert.equal(data.agents.find((item) => item.id === ownerId).status, "paused");
+await harness.performAction("resume-normal", {}, { companyId });
+data = await harness.getData("operation-control", { companyId });
+assert.equal(data.state.mode, "normal");
+assert.equal(data.runBudget.count, 0);
+assert.equal(data.agents.find((item) => item.id === manualPauseId).status, "paused");
+
 const human = { type: "user", userId: "local-board" };
 const steward = { type: "agent", agentId: ownerId, runId: "run-steward" };
 const builder = { type: "agent", agentId: workerId, runId: "run-builder" };
 
-await harness.performAction("resume-normal", {}, { companyId });
 const goal = await harness.ctx.goals.create({
   companyId,
   title: "Workflow contract",

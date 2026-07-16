@@ -6,6 +6,7 @@ Company-wide maintenance control and Goal → Milestone → Task delivery gates 
 - `Pause now` pauses every non-owner agent immediately, cancelling active runs.
 - The Maintainer is the default maintenance owner and remains available in both modes.
 - Returning to normal resumes only agents paused by this plugin.
+- An optional `maxRunsPerHour` counts Paperclip run-start events per Company. The first run above the limit is cancelled, all Agents enter immediate maintenance, and the Board can reset the window only by resuming normal operation in the dashboard.
 - State is stored per company and mirrored to a `Company Operation State` issue document Artifact.
 
 ## Delivery control
@@ -28,7 +29,7 @@ Agents receive only `propose-milestone`, `create-root-task`, `create-child-task`
 
 The current Paperclip plugin SDK cannot read a resolved interaction or mutate an Issue's native execution policy. The plugin therefore uses a direct, authenticated Board action for the final Milestone gate instead of trusting an Agent to relay a human response.
 
-Configure the workflow owner through the plugin instance configuration, for example `{ "orchestratorRole": "ceo" }`. The plugin does not infer an owner from an Agent name or a hardcoded role.
+Configure the workflow owner and run ceiling through the plugin instance configuration, for example `{ "orchestratorRole": "ceo", "maxRunsPerHour": 20 }`. The plugin does not infer an owner from an Agent name or a hardcoded role.
 
 ## Build and install
 

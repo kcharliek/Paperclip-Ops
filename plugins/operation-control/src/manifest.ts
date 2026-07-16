@@ -3,7 +3,7 @@ import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 const manifest = {
   id: "local.operation-control",
   apiVersion: 1,
-  version: "0.4.0",
+  version: "0.5.0",
   displayName: "Operation Control",
   description: "Drain or immediately pause agents and enforce human-gated Goal → Milestone → Task delivery.",
   author: "Local",
@@ -39,6 +39,12 @@ const manifest = {
         minLength: 1,
         title: "Workflow orchestrator role",
         description: "Agent role allowed to propose Milestones and create Root Tasks."
+      },
+      maxRunsPerHour: {
+        type: "integer",
+        minimum: 1,
+        title: "Company runs per hour",
+        description: "Immediately pause all Agents when this hourly run-start limit is exceeded."
       }
     },
     required: ["orchestratorRole"],
