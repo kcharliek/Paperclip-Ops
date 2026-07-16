@@ -202,6 +202,18 @@ let orchestrationTasks = await harness.ctx.issues.list({
 });
 assert.equal(orchestrationTasks[0]?.assigneeAgentId, ownerId);
 assert.match(orchestrationTasks[0]?.description ?? "", /api\/plugins\/tools\/execute/);
+const repaired = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
+assert.equal(repaired.status, "woken");
+assert.equal(repaired.issueId, orchestrationTasks[0]?.id);
+await harness.ctx.issues.update(orchestrationTasks[0].id, { status: "done" }, companyId);
+const recreated = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
+assert.equal(recreated.status, "created");
+assert.equal((await harness.ctx.issues.get(recreated.issueId, companyId)).assigneeAgentId, ownerId);
+await harness.ctx.issues.update(recreated.issueId, { status: "done" }, companyId);
+await assert.rejects(
+  () => harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: steward }),
+  /requires a human actor/,
+);
 await harness.performAction("start-maintenance", {
   ownerAgentId: ownerId,
   stopPolicy: "immediate",
@@ -220,6 +232,8 @@ const rejectedMilestone = await harness.performAction("propose-milestone", {
   title: "Incomplete delivery slice",
   description: "Required scope is still unclear.",
 }, { companyId, actor: steward });
+const gatedRepair = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
+assert.deepEqual(gatedRepair, { status: "human_gate", phase: "milestone_pending" });
 const requestedChanges = await harness.performAction("confirm-milestone", {
   goalId: goal.id,
   decision: "rejected",

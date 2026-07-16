@@ -423,6 +423,56 @@ export function createOperationPlugin() {
       const toolExecutionGuide = (toolName: string) =>
         `Use the registered Operation Control tool ${toolName} directly. If it is not exposed as a native tool, POST to $PAPERCLIP_API_URL/api/plugins/tools/execute with the Bearer $PAPERCLIP_API_KEY and JSON {"tool":"local.operation-control:${toolName}","parameters":{...},"runContext":{"agentId":"$PAPERCLIP_AGENT_ID","runId":"$PAPERCLIP_RUN_ID","companyId":"$PAPERCLIP_COMPANY_ID","projectId":"<related-project-id>"}}. If the current Task has no Project, resolve the related Project once from GET $PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/projects; projectId must not be null. Use the current wake payload and tool schema; do not search server source or past sessions for invocation details.`;
 
+      const repairDeliveryOrchestration = async (companyId: string, actorUserId: string) => {
+        await requireNormalOperation(companyId);
+        const activeGoalId = await ctx.state.get(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY));
+        if (typeof activeGoalId !== "string") throw new Error("No controlled delivery Goal is active");
+        const state = await getDeliveryState(companyId, activeGoalId);
+        if (!state) throw new Error("Controlled delivery state is missing");
+        if (state.phase === "milestone_pending" || state.phase === "awaiting_human_confirmation") {
+          return { status: "human_gate", phase: state.phase };
+        }
+        if (state.phase === "executing") return { status: "active_delivery", phase: state.phase };
+
+        const targetGoalId = state.phase === "milestone_confirmed" ? state.milestoneId : state.goalId;
+        if (!targetGoalId) throw new Error("Delivery state is missing the orchestration Goal");
+        const pending = (await ctx.issues.list({
+          companyId,
+          originKind: ORCHESTRATION_ORIGIN,
+          includePluginOperations: true,
+          limit: 100,
+        })).filter((issue) => issue.goalId === targetGoalId && !isTerminal(issue));
+        if (pending.length > 1) throw new Error("Multiple pending delivery orchestration Tasks require manual resolution");
+        if (pending[0]) {
+          await ctx.issues.requestWakeup(pending[0].id, companyId, {
+            reason: "Repair stalled controlled delivery",
+            contextSource: "operation-control:delivery-repair",
+            idempotencyKey: `${pending[0].id}:repair:${state.changedAt}`,
+            actorUserId,
+          });
+          return { status: "woken", phase: state.phase, issueId: pending[0].id };
+        }
+
+        const next = state.phase === "milestone_confirmed"
+          ? {
+              title: "Recover confirmed Milestone Root Task creation",
+              description: `Milestone ${state.milestoneId} is confirmed. Call create-root-task, then mark this recovery Task done.\n\n${toolExecutionGuide("create-root-task")}`,
+            }
+          : {
+              title: state.phase === "completed" ? "Recover next Milestone planning" : "Recover Milestone proposal",
+              description: `Review remaining Company Goal ${state.goalId} scope and call propose-milestone, then mark this recovery Task done.\n\n${toolExecutionGuide("propose-milestone")}`,
+            };
+        const issue = await queueOrchestratorWork({
+          companyId,
+          goalId: targetGoalId,
+          preferredAgentId: state.orchestratorAgentId,
+          originId: `${state.goalId}:repair:${state.phase}:${state.changedAt}`,
+          ...next,
+          actorUserId,
+        });
+        return { status: "created", phase: state.phase, issueId: issue.id };
+      };
+
       const createChildTask = async (
         companyId: string,
         actorId: string,
@@ -1140,6 +1190,11 @@ export function createOperationPlugin() {
       ctx.actions.register("confirm-milestone", async (params, context) => {
         const companyId = readCompanyId(params, context.companyId);
         return serialized(companyId, () => confirmMilestone(companyId, actorUser(context), params));
+      });
+
+      ctx.actions.register("repair-delivery-orchestration", async (params, context) => {
+        const companyId = readCompanyId(params, context.companyId);
+        return serialized(companyId, () => repairDeliveryOrchestration(companyId, actorUser(context)));
       });
 
       ctx.actions.register("create-root-task", async (params, context) => {

@@ -19,6 +19,7 @@ The plugin exposes a controlled path:
 
 - Adopting an existing company Goal and both Milestone decisions require a human actor. A proposal includes a human-readable scope description; the Board can accept it or request changes with a reason.
 - Goal adoption, accepted Milestone confirmation, requested draft revision, and final Milestone acceptance create an idempotent Paperclip orchestration Task and wake the configured orchestrator. This keeps the workflow moving while leaving product work behind the human Gate.
+- If orchestration stalls in a planning phase, the Board can re-wake the single pending orchestration Task or recreate a missing one with **Repair stalled delivery**. Human gates and active delivery are intentionally left untouched.
 - Milestone proposal and Root Task creation require an Agent whose role matches the configured `orchestratorRole`.
 - Each Milestone has exactly one tracked Root Task. Distinct delivery areas are Node Tasks below that Root, so Git reporting and final Board review have one canonical revision.
 - Child creation requires the parent owner, an independent executor, and sibling blockers are validated.

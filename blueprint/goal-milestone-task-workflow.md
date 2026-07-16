@@ -29,8 +29,9 @@ Product Steward만 Backlog를 `todo`로 승격하고 적절한 부모, Role, 담
 
 - Backlog에는 Goal, 기대 가치, 선택인 이유와 폐기 조건을 기록한다.
 - `Backlog Sweep` Routine은 관련 Backlog가 있을 때 Milestone 확인 전과 완료 후 실행한다. Product Steward는 필요성을 표시하고, Board 또는 Routine owner가 실행하면 Sweeper에게 정리 Task가 배정된다.
-- Sweeper는 한 번에 최대 10개를 확인하고 명백한 중복, 이미 반영된 결과, 충족된 폐기 조건만 근거를 댓글로 남긴 뒤 `cancelled`로 바꾼다.
+- Sweeper는 한 번에 최대 10개를 확인하고 명백한 중복, `done`으로 완료된 결과, 충족된 폐기 조건만 근거를 댓글로 남긴 뒤 `cancelled`로 바꾼다. planned·active Milestone과 미완료 Task는 완료 근거가 아니다.
 - 기존 Task처럼 선택 여부나 폐기 조건이 불명확한 Backlog는 취소하지 않고 Product Steward에게 분류를 요청한다.
+- Backlog 쓰기가 Agent 권한 경계에 막히면 취소로 집계하지 않고 Product Steward 분류 요청으로 남기며 Routine 자체는 완료한다.
 - Routine이 만든 정리 Task는 active Root/Node의 child로 두지 않고 제품 workspace를 수정하지 않는다.
 
 ## Task tree 규칙

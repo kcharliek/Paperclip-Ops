@@ -63,6 +63,7 @@ export function OperationControlWidget({ context }: PluginWidgetProps) {
   const resumeNormal = usePluginAction("resume-normal");
   const adoptGoal = usePluginAction("adopt-goal");
   const confirmMilestone = usePluginAction("confirm-milestone");
+  const repairDeliveryOrchestration = usePluginAction("repair-delivery-orchestration");
   const recordMilestoneConfirmation = usePluginAction("record-milestone-confirmation");
   const [ownerAgentId, setOwnerAgentId] = useState("");
   const [selectedGoalId, setSelectedGoalId] = useState("");
@@ -243,6 +244,15 @@ export function OperationControlWidget({ context }: PluginWidgetProps) {
             <small>Phase: {deliveryState.phase.replaceAll("_", " ")}</small>
             {delivery?.milestone && <small>Milestone: {delivery.milestone.title}</small>}
             {delivery?.root && <small>Root Task: {delivery.root.title} ({delivery.root.status})</small>}
+
+            {["goal_registered", "milestone_confirmed", "completed"].includes(deliveryState.phase) && (
+              <button
+                disabled={busy}
+                onClick={() => void run(() => repairDeliveryOrchestration({ companyId: context.companyId }))}
+              >
+                Repair stalled delivery
+              </button>
+            )}
 
             {deliveryState.phase === "milestone_pending" && (
               <div style={{ display: "grid", gap: 10, padding: 10, border: "1px solid var(--border)", borderRadius: 6 }}>
