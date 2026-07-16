@@ -96,7 +96,7 @@ shared workspace writer는 동시에 한 명만 허용한다. isolated workspace
 |---|---|
 | Routine | `Backlog Sweep`, active, Sweeper 담당, 수동/API 실행, schedule 없음 |
 | Pipeline | 없음 |
-| Operation Control | `local.operation-control` 0.3.0, ready/healthy |
+| Operation Control | `local.operation-control` 0.4.0, ready/healthy |
 | Controlled delivery | Company Goal `goal_registered`, plugin Milestone·Root Task 없음 |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |

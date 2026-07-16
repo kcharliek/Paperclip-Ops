@@ -70,7 +70,7 @@ Node review 또는 Root review가 거절되면 다음만 수행한다.
 1. reviewer가 불충족 기준, 확인 근거와 기대 결과를 댓글로 남긴다.
 2. 담당 Agent가 완료된 child를 다시 열지 않고 실패 항목만 다루는 1~3개의 보완 child를 같은 부모 아래 만든다.
 3. 보완 child가 끝나면 같은 부모를 같은 reviewer에게 다시 제출한다.
-4. 같은 완료 기준이 두 번 거절되면 자동 분해를 멈추고 Product Steward가 범위·설계 판단을 사람에게 올린다.
+4. Paperclip에 구조화된 완료 기준 ID가 없으므로, 같은 Node 결과가 두 번 거절되면 plugin이 자동 보완 생성을 멈추고 Product Steward가 범위·설계 판단을 사람에게 올린다. 사람의 판단 뒤 기존 Node를 승인하는 복구 경로는 유지한다.
 
 Milestone 최종 확인이 거절되면 Product Steward가 거절 사유를 Root 또는 해당 Node에 연결하고, 그 아래에 보완 child를 만들어 다시 실행한다. Goal이나 Milestone 범위가 바뀌면 새 Milestone 확인을 먼저 받아야 한다.
 

@@ -17,7 +17,7 @@ The plugin exposes a controlled path:
 - Adopting an existing company Goal and both Milestone decisions require a human actor.
 - Milestone proposal and Root Task creation require an Agent whose role matches the configured `orchestratorRole`.
 - Child creation requires the parent owner, an independent executor, and sibling blockers are validated.
-- Node rejection creates a remediation child. Human Milestone rejection also creates a remediation child below the Root Task.
+- The first Node rejection creates a remediation child. A second rejection of the same Node stops automatic remediation and records that a Board design or scope decision is required; approval remains available after that decision. Human Milestone rejection also creates a remediation child below the Root Task.
 - Root approval returns the Task to the configured orchestrator. The orchestrator submits `docs/milestones/<milestone-id>.md`, its full Git commit SHA, summary and evidence for Board review.
 - The plugin resolves the Root Task's Paperclip execution workspace, or its primary Project workspace, and rejects the report unless the commit exists, is reachable from `HEAD`, and contains that exact report path.
 - Only the authenticated Board action in the dashboard widget can accept or reject that report. Agents have no final-decision tool.

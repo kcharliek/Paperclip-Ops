@@ -30,6 +30,7 @@ const ARTIFACT_ORIGIN = "plugin:operation-control" as const;
 const DELIVERY_STATE_KEY_PREFIX = "delivery-control:";
 const ACTIVE_DELIVERY_GOAL_KEY = "active-delivery-goal-id";
 const DELIVERY_NODE_KEY = "delivery-node";
+const DELIVERY_NODE_REJECTION_COUNT_KEY = "delivery-node-rejection-count";
 const DELIVERY_MILESTONE_KEY = "delivery-milestone";
 
 type DeliveryPhase =
@@ -95,6 +96,10 @@ function deliveryStateKey(companyId: string, goalId: string) {
 
 function deliveryNodeKey(issueId: string) {
   return { scopeKind: "issue" as const, scopeId: issueId, stateKey: DELIVERY_NODE_KEY };
+}
+
+function deliveryNodeRejectionCountKey(issueId: string) {
+  return { scopeKind: "issue" as const, scopeId: issueId, stateKey: DELIVERY_NODE_REJECTION_COUNT_KEY };
 }
 
 function deliveryMilestoneKey(goalId: string) {
@@ -264,6 +269,11 @@ export function createOperationPlugin() {
           : null;
       };
 
+      const getNodeRejectionCount = async (issueId: string): Promise<number> => {
+        const value = await ctx.state.get(deliveryNodeRejectionCountKey(issueId));
+        return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
+      };
+
       const getIssueDelivery = async (
         companyId: string,
         issue: Issue,
@@ -395,6 +405,20 @@ export function createOperationPlugin() {
         if (decision !== "approved" && decision !== "rejected") throw new Error("decision must be approved or rejected");
         if (decision === "rejected") {
           const reason = stringParam(params, "reason");
+          const nodeRejectionCount = await getNodeRejectionCount(issue.id);
+          if (nodeRejectionCount >= 1) {
+            if (nodeRejectionCount === 1) {
+              await ctx.state.set(deliveryNodeRejectionCountKey(issue.id), 2);
+              await ctx.issues.createComment(
+                issue.id,
+                "Workflow guard: this Node was rejected twice. Automatic remediation is stopped until the Board resolves the design or scope decision.",
+                companyId,
+                { authorAgentId: actorId },
+              );
+            }
+            // ponytail: This is intentionally Node-wide until Paperclip exposes structured acceptance-criterion IDs.
+            throw new Error("This Node was rejected twice; stop automatic remediation and request a Board design or scope decision");
+          }
           const remediation = await ctx.issues.create({
             companyId,
             parentId: issue.id,
@@ -415,6 +439,7 @@ export function createOperationPlugin() {
             milestoneId: tracked.node.milestoneId,
             parentId: issue.id,
           } satisfies DeliveryNode);
+          await ctx.state.set(deliveryNodeRejectionCountKey(issue.id), nodeRejectionCount + 1);
           await ctx.issues.update(issue.id, { status: "in_progress" }, companyId, { actorAgentId: actorId, actorRunId });
           await saveDeliveryState(companyId, {
             ...tracked.state,

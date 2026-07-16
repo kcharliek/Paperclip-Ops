@@ -220,6 +220,37 @@ await assert.rejects(
 );
 await harness.ctx.issues.update(childOne.id, { status: "done" }, companyId, { actorAgentId: reviewerId });
 await harness.ctx.issues.update(childTwo.id, { status: "done" }, companyId, { actorAgentId: reviewerId });
+const firstNodeRejection = await harness.performAction("review-node", {
+  issueId: root.id,
+  decision: "rejected",
+  reason: "Evidence does not satisfy the Node contract",
+  assigneeAgentId: reviewerId,
+}, { companyId, actor: builder });
+const firstNodeRemediation = await harness.ctx.issues.get(firstNodeRejection.remediationIssueId, companyId);
+assert.equal(firstNodeRemediation?.parentId, root.id);
+await harness.ctx.issues.update(
+  firstNodeRejection.remediationIssueId,
+  { status: "done" },
+  companyId,
+  { actorAgentId: reviewerId },
+);
+const childrenBeforeSecondNodeRejection = await harness.ctx.issues.getSubtree(root.id, companyId, { includeRoot: false });
+await assert.rejects(
+  () => harness.performAction("review-node", {
+    issueId: root.id,
+    decision: "rejected",
+    reason: "The same Node contract is still not satisfied",
+    assigneeAgentId: reviewerId,
+  }, { companyId, actor: builder }),
+  /rejected twice/,
+);
+const childrenAfterSecondNodeRejection = await harness.ctx.issues.getSubtree(root.id, companyId, { includeRoot: false });
+assert.equal(childrenAfterSecondNodeRejection.issues.length, childrenBeforeSecondNodeRejection.issues.length);
+assert.equal(await harness.ctx.state.get({
+  scopeKind: "issue",
+  scopeId: root.id,
+  stateKey: "delivery-node-rejection-count",
+}), 2);
 const rootReview = await harness.performAction("review-node", {
   issueId: root.id,
   decision: "approved",
