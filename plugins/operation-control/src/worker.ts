@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import {
   definePlugin,
   runWorker,
@@ -126,6 +127,11 @@ function reportCommitParam(params: Record<string, unknown>): string {
     throw new Error("commitSha must be a full Git commit SHA");
   }
   return value;
+}
+
+function requireGit(cwd: string, args: string[], message: string): void {
+  const result = spawnSync("git", ["-C", cwd, ...args], { stdio: "ignore", timeout: 5_000 });
+  if (result.status !== 0 || result.error) throw new Error(message);
 }
 
 function isTerminal(issue: Issue): boolean {
@@ -745,6 +751,15 @@ export function createOperationPlugin() {
         if (!root || root.status !== "in_review" || root.assigneeAgentId !== agentId) {
           throw new Error("Root Task must be in review with the workflow orchestrator");
         }
+        const workspace = root.executionWorkspaceId
+          ? await ctx.executionWorkspaces.get(root.executionWorkspaceId, companyId)
+          : await ctx.projects.getWorkspaceForIssue(root.id, companyId);
+        const cwd = workspace && "cwd" in workspace ? workspace.cwd ?? workspace.path : workspace?.path;
+        if (!cwd) throw new Error("Root Task requires a local Paperclip Git workspace");
+        requireGit(cwd, ["rev-parse", "--is-inside-work-tree"], "Root Task workspace is not a Git repository");
+        requireGit(cwd, ["cat-file", "-e", `${commitSha}^{commit}`], "commitSha does not exist in the Root Task workspace");
+        requireGit(cwd, ["merge-base", "--is-ancestor", commitSha, "HEAD"], "commitSha is not reachable from the Root Task workspace HEAD");
+        requireGit(cwd, ["cat-file", "-e", `${commitSha}:${reportPath}`], "Git commit does not contain the Milestone report");
         const detailsMarkdown = [
           "## Board confirmation required",
           "",

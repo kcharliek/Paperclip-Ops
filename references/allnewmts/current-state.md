@@ -65,10 +65,10 @@ AllNewMTS 제품 저장소는 초기 Expo scaffold를 `01fddaf6e4f0b23457c10a442
 | 항목 | 값 |
 |---|---|
 | Plugin key | `local.operation-control` |
-| 버전 / 상태 | `0.2.0` / ready, healthy |
+| 버전 / 상태 | `0.3.0` / ready, healthy |
 | Company mode | `normal` |
 | Delivery state | Company Goal `goal_registered`, 아직 plugin Milestone·Root Task 없음 |
-| Milestone 완료 gate | Git 보고서 + dashboard의 인증된 Board 직접 결정 |
+| Milestone 완료 gate | Plugin의 Git commit·보고서 실재 검증 + dashboard의 인증된 Board 직접 결정 |
 | Maintenance owner 관례 | Maintainer |
 | 기본 stop policy | drain |
 | Backlog Sweep Routine | active, Sweeper 담당, 수동/API 실행, schedule 없음 |

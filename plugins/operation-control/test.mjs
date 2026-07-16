@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
 import manifest from "./dist/manifest.js";
 import plugin from "./dist/worker.js";
@@ -8,7 +12,19 @@ const ownerId = "00000000-0000-4000-8000-000000000002";
 const workerId = "00000000-0000-4000-8000-000000000003";
 const manualPauseId = "00000000-0000-4000-8000-000000000004";
 const reviewerId = "00000000-0000-4000-8000-000000000005";
+const projectId = "00000000-0000-4000-8000-000000000006";
+const workspaceId = "00000000-0000-4000-8000-000000000007";
 const now = new Date();
+const gitWorkspace = mkdtempSync(join(tmpdir(), "operation-control-git-"));
+process.on("exit", () => rmSync(gitWorkspace, { recursive: true, force: true }));
+const git = (...args) => execFileSync("git", args, { cwd: gitWorkspace, encoding: "utf8" }).trim();
+git("init", "-q");
+git("config", "user.name", "Operation Control Test");
+git("config", "user.email", "operation-control@example.invalid");
+writeFileSync(join(gitWorkspace, "README.md"), "# Fixture\n");
+git("add", "README.md");
+git("commit", "-qm", "fixture");
+const baselineCommit = git("rev-parse", "HEAD");
 
 const agent = (id, name, status, role = "engineer") => ({
   id,
@@ -62,6 +78,19 @@ harness.seed({
     logoUrl: null,
     createdAt: now,
     updatedAt: now,
+  }],
+  projects: [{ id: projectId, companyId }],
+  projectWorkspaces: [{
+    id: workspaceId,
+    projectId,
+    name: "Git fixture",
+    path: gitWorkspace,
+    repoUrl: null,
+    repoRef: null,
+    defaultRef: null,
+    isPrimary: true,
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
   }],
   agents: [
     agent(ownerId, "Configured Coordinator", "idle", "ceo"),
@@ -147,6 +176,7 @@ await assert.rejects(
 );
 const root = await harness.performAction("create-root-task", {
   goalId: goal.id,
+  projectId,
   title: "Delivery root",
   assigneeAgentId: workerId,
 }, { companyId, actor: steward });
@@ -211,16 +241,39 @@ await assert.rejects(
   }, { companyId, agentId: ownerId, runId: "run-report" }),
   /full Git commit SHA/,
 );
+await assert.rejects(
+  () => harness.executeTool("request-milestone-review", {
+    goalId: goal.id,
+    reportPath,
+    commitSha: "f".repeat(40),
+    summary: "Unknown commit.",
+  }, { companyId, agentId: ownerId, runId: "run-unknown-commit" }),
+  /does not exist in the Root Task workspace/,
+);
+await assert.rejects(
+  () => harness.executeTool("request-milestone-review", {
+    goalId: goal.id,
+    reportPath,
+    commitSha: baselineCommit,
+    summary: "Report is not committed yet.",
+  }, { companyId, agentId: ownerId, runId: "run-missing-report" }),
+  /does not contain the Milestone report/,
+);
+mkdirSync(join(gitWorkspace, "docs", "milestones"), { recursive: true });
+writeFileSync(join(gitWorkspace, reportPath), "# First completion report\n");
+git("add", reportPath);
+git("commit", "-qm", "first milestone report");
+const firstCommit = git("rev-parse", "HEAD");
 const firstRequest = await harness.executeTool("request-milestone-review", {
   goalId: goal.id,
   reportPath,
-  commitSha: "a".repeat(40),
+  commitSha: firstCommit,
   summary: "First completion report.",
   evidence: "All scoped checks passed.",
 }, { companyId, agentId: ownerId, runId: "run-report" });
 assert.equal(firstRequest.data.phase, "awaiting_human_confirmation");
 assert.equal(firstRequest.data.report.path, reportPath);
-assert.equal(firstRequest.data.report.commitSha, "a".repeat(40));
+assert.equal(firstRequest.data.report.commitSha, firstCommit);
 await assert.rejects(
   () => harness.performAction("record-milestone-confirmation", {
     goalId: goal.id,
@@ -275,10 +328,14 @@ await harness.performAction("review-node", {
   issueId: root.id,
   decision: "approved",
 }, { companyId, actor: builder });
+writeFileSync(join(gitWorkspace, reportPath), "# Remediated completion report\n");
+git("add", reportPath);
+git("commit", "-qm", "remediate milestone report");
+const secondCommit = git("rev-parse", "HEAD");
 const secondRequest = await harness.executeTool("request-milestone-review", {
   goalId: goal.id,
   reportPath,
-  commitSha: "b".repeat(40),
+  commitSha: secondCommit,
   summary: "Remediated completion report.",
 }, { companyId, agentId: ownerId, runId: "run-report-2" });
 await harness.performAction("record-milestone-confirmation", {

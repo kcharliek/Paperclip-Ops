@@ -107,7 +107,7 @@ Root 담당 Agent는 Root review 전에 제품 저장소의 `docs/milestones/<mi
 - 롤백: <복구 방법>
 ```
 
-Git Markdown이 원본이다. 보고서가 자기 자신을 포함한 commit SHA를 기록하는 순환 조건은 두지 않는다. Product Steward가 제출한 full commit SHA와 보고서 경로를 Operation Control dashboard가 함께 표시한다. Product Steward는 보고서를 직접 작성하거나 제품 workspace를 수정하지 않고 commit에 포함됐는지만 확인한다. Board가 거절하면 기존 보고서를 덮어쓰지 않고 보완 commit을 만든 뒤 새 SHA로 다시 요청한다.
+Git Markdown이 원본이다. 보고서가 자기 자신을 포함한 commit SHA를 기록하는 순환 조건은 두지 않는다. Product Steward가 full commit SHA와 보고서 경로를 제출하면 Operation Control은 Paperclip Root execution workspace 또는 Project primary workspace에서 commit 존재, `HEAD` 도달 가능성과 해당 경로 포함 여부를 검증한 뒤 dashboard에 표시한다. Product Steward는 보고서를 직접 작성하거나 제품 workspace를 수정하지 않는다. Board가 거절하면 기존 보고서를 덮어쓰지 않고 보완 commit을 만든 뒤 새 SHA로 다시 요청한다.
 
 Backlog description에는 최소한 다음을 기록한다.
 

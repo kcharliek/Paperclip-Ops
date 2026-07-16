@@ -3,7 +3,7 @@ import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 const manifest = {
   id: "local.operation-control",
   apiVersion: 1,
-  version: "0.2.0",
+  version: "0.3.0",
   displayName: "Operation Control",
   description: "Drain or immediately pause agents and enforce human-gated Goal → Milestone → Task delivery.",
   author: "Local",
@@ -19,6 +19,8 @@ const manifest = {
     "goals.read",
     "goals.create",
     "goals.update",
+    "project.workspaces.read",
+    "execution.workspaces.read",
     "issues.read",
     "issues.create",
     "issues.update",
