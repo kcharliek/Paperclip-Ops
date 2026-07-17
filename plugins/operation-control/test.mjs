@@ -1,8 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createTestHarness } from "@paperclipai/plugin-sdk/testing";
 import manifest from "./dist/manifest.js";
 import plugin from "./dist/worker.js";
@@ -11,21 +7,12 @@ const companyId = "00000000-0000-4000-8000-000000000001";
 const ownerId = "00000000-0000-4000-8000-000000000002";
 const workerId = "00000000-0000-4000-8000-000000000003";
 const manualPauseId = "00000000-0000-4000-8000-000000000004";
-const reviewerId = "00000000-0000-4000-8000-000000000005";
-const projectId = "00000000-0000-4000-8000-000000000006";
-const workspaceId = "00000000-0000-4000-8000-000000000007";
+const goalId = "00000000-0000-4000-8000-000000000005";
+const deferredGoalId = "00000000-0000-4000-8000-000000000006";
+const teamGoalId = "00000000-0000-4000-8000-000000000007";
+const retryGoalId = "00000000-0000-4000-8000-000000000008";
 const human = { type: "user", userId: "local-board" };
 const now = new Date();
-const gitWorkspace = mkdtempSync(join(tmpdir(), "operation-control-git-"));
-process.on("exit", () => rmSync(gitWorkspace, { recursive: true, force: true }));
-const git = (...args) => execFileSync("git", args, { cwd: gitWorkspace, encoding: "utf8" }).trim();
-git("init", "-q");
-git("config", "user.name", "Operation Control Test");
-git("config", "user.email", "operation-control@example.invalid");
-writeFileSync(join(gitWorkspace, "README.md"), "# Fixture\n");
-git("add", "README.md");
-git("commit", "-qm", "fixture");
-const baselineCommit = git("rev-parse", "HEAD");
 
 const agent = (id, name, status, role = "engineer") => ({
   id,
@@ -53,8 +40,21 @@ const agent = (id, name, status, role = "engineer") => ({
   updatedAt: now,
 });
 
+const goal = (id, title, level = "company", status = "active") => ({
+  id,
+  companyId,
+  title,
+  description: `${title} description`,
+  level,
+  status,
+  parentId: null,
+  ownerAgentId: null,
+  createdAt: now,
+  updatedAt: now,
+});
+
 const harness = createTestHarness({ manifest });
-harness.setConfig({ orchestratorRole: "ceo", maxRunsPerHour: 2 });
+harness.setConfig({ orchestratorRole: "ceo", autoDispatchGoals: true, maxRunsPerHour: 2 });
 harness.seed({
   companies: [{
     id: companyId,
@@ -80,65 +80,52 @@ harness.seed({
     createdAt: now,
     updatedAt: now,
   }],
-  projects: [{ id: projectId, companyId }],
-  projectWorkspaces: [{
-    id: workspaceId,
-    projectId,
-    name: "Git fixture",
-    path: gitWorkspace,
-    repoUrl: null,
-    repoRef: null,
-    defaultRef: null,
-    isPrimary: true,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
-  }],
   agents: [
-    agent(ownerId, "Configured Coordinator", "idle", "ceo"),
-    agent(workerId, "Engineer", "running"),
-    agent(manualPauseId, "Already Paused", "paused"),
-    agent(reviewerId, "Independent Reviewer", "idle", "qa"),
+    agent(ownerId, "Product Steward", "idle", "ceo"),
+    agent(workerId, "Builder", "running"),
+    agent(manualPauseId, "Already Paused", "paused", "qa"),
   ],
 });
+
 await plugin.definition.setup(harness.ctx);
-assert.equal(
-  manifest.tools?.some((tool) => tool.name === "record-milestone-confirmation"),
-  false,
-  "Agents must not receive a tool that can record the final Board decision",
-);
+
+assert.equal(manifest.version, "1.0.0");
+assert.deepEqual(manifest.tools?.map((tool) => tool.name), ["inspect-operation-state"]);
+for (const removedTool of ["propose-milestone", "create-root-task", "create-child-task", "review-node", "request-milestone-review"]) {
+  assert.equal(manifest.tools?.some((tool) => tool.name === removedTool), false);
+}
+
 const inspected = await harness.performAction("inspect-operation-state", {}, {
   companyId,
   actor: { type: "agent", agentId: ownerId, runId: "run-inspection" },
 });
 assert.equal(inspected.state.mode, "normal");
+assert.equal(inspected.autonomy.deliveryControl, "paperclip-native");
+assert.equal(inspected.autonomy.autoDispatchGoals, true);
 assert.equal(inspected.runBudget.limit, 2);
-assert.equal(inspected.agents.length, 4);
 await assert.rejects(
-  () => harness.performAction("inspect-operation-state", {}, {
-    companyId,
-    actor: { type: "user", userId: "local-board" },
-  }),
+  () => harness.performAction("inspect-operation-state", {}, { companyId, actor: human }),
   /requires an Agent actor/,
 );
 await assert.rejects(
   () => harness.performAction("start-maintenance", {
     ownerAgentId: ownerId,
     stopPolicy: "immediate",
-  }, { companyId, actor: { type: "agent", agentId: ownerId, runId: "run-agent-maintenance" } }),
+  }, { companyId, actor: { type: "agent", agentId: ownerId, runId: "run-maintenance" } }),
   /requires a human actor/,
 );
 
 await harness.performAction("start-maintenance", {
   ownerAgentId: ownerId,
   stopPolicy: "drain",
-  reason: "Debt cleanup",
+  reason: "Maintenance contract test",
 }, { companyId, actor: human });
-
 let data = await harness.getData("operation-control", { companyId });
 assert.equal(data.state.mode, "holding");
+assert.equal(data.agents.find((item) => item.id === ownerId).status, "idle");
 assert.equal(data.agents.find((item) => item.id === workerId).status, "running");
 
-harness.seed({ agents: [agent(workerId, "Engineer", "idle")] });
+harness.seed({ agents: [agent(workerId, "Builder", "idle")] });
 await harness.emit("agent.run.finished", { agentId: workerId }, { companyId });
 data = await harness.getData("operation-control", { companyId });
 assert.equal(data.state.mode, "maintenance");
@@ -150,510 +137,133 @@ assert.equal(data.state.mode, "normal");
 assert.equal(data.agents.find((item) => item.id === workerId).status, "idle");
 assert.equal(data.agents.find((item) => item.id === manualPauseId).status, "paused");
 
-harness.seed({ agents: [agent(workerId, "Engineer", "running")] });
+harness.seed({ goals: [goal(goalId, "Autonomous product improvement")] });
+await harness.emit("goal.created", { goalId }, {
+  companyId,
+  entityId: goalId,
+  entityType: "goal",
+  actorType: "user",
+});
+let dispatches = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:goal-dispatch",
+  includePluginOperations: true,
+  limit: 100,
+});
+assert.equal(dispatches.length, 1);
+assert.equal(dispatches[0].goalId, goalId);
+assert.equal(dispatches[0].assigneeAgentId, ownerId);
+assert.match(dispatches[0].description ?? "", /Paperclip native Issues/);
+assert.match(dispatches[0].description ?? "", /human approval stage only/);
+assert.doesNotMatch(dispatches[0].description ?? "", /propose-milestone|review-node/);
+
+await harness.emit("goal.updated", { goalId }, {
+  companyId,
+  entityId: goalId,
+  entityType: "goal",
+  actorType: "user",
+});
+dispatches = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:goal-dispatch",
+  includePluginOperations: true,
+  limit: 100,
+});
+assert.equal(dispatches.length, 1, "Goal updates must not duplicate the autonomous dispatch Task");
+
+const requestWakeup = harness.ctx.issues.requestWakeup;
+let retriedWakeups = 0;
+harness.ctx.issues.requestWakeup = async (...args) => {
+  retriedWakeups += 1;
+  if (retriedWakeups === 1) throw new Error("injected dispatch wakeup failure");
+  return requestWakeup(...args);
+};
+harness.seed({ goals: [goal(retryGoalId, "Retry native Goal dispatch")] });
+await assert.rejects(
+  () => harness.emit("goal.created", { goalId: retryGoalId }, {
+    companyId,
+    entityId: retryGoalId,
+    entityType: "goal",
+    actorType: "user",
+  }),
+  /injected dispatch wakeup failure/,
+);
+await harness.emit("goal.updated", { goalId: retryGoalId }, {
+  companyId,
+  entityId: retryGoalId,
+  entityType: "goal",
+  actorType: "user",
+});
+harness.ctx.issues.requestWakeup = requestWakeup;
+dispatches = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:goal-dispatch",
+  includePluginOperations: true,
+  limit: 100,
+});
+assert.equal(dispatches.filter((item) => item.goalId === retryGoalId).length, 1);
+assert.equal(retriedWakeups, 2, "An existing dispatch Task retries the native idempotent wakeup without a custom recovery state");
+
+harness.seed({ goals: [goal(teamGoalId, "Team-only planning", "team")] });
+await harness.emit("goal.created", { goalId: teamGoalId }, {
+  companyId,
+  entityId: teamGoalId,
+  entityType: "goal",
+  actorType: "agent",
+});
+dispatches = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:goal-dispatch",
+  includePluginOperations: true,
+  limit: 100,
+});
+assert.equal(dispatches.length, 2, "Team Goals are not independent Company delivery requests");
+
 await harness.performAction("start-maintenance", {
   ownerAgentId: ownerId,
   stopPolicy: "immediate",
 }, { companyId, actor: human });
-data = await harness.getData("operation-control", { companyId });
-assert.equal(data.state.mode, "maintenance");
-assert.equal(data.agents.find((item) => item.id === workerId).status, "paused");
+harness.seed({ goals: [goal(deferredGoalId, "Goal created during maintenance")] });
+await harness.emit("goal.created", { goalId: deferredGoalId }, {
+  companyId,
+  entityId: deferredGoalId,
+  entityType: "goal",
+  actorType: "user",
+});
+dispatches = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:goal-dispatch",
+  includePluginOperations: true,
+  limit: 100,
+});
+assert.equal(dispatches.length, 2);
 
 await harness.performAction("resume-normal", {}, { companyId, actor: human });
-harness.seed({ agents: [agent(workerId, "Engineer", "running")] });
+dispatches = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:goal-dispatch",
+  includePluginOperations: true,
+  limit: 100,
+});
+assert.equal(dispatches.length, 3, "Resuming normal operation dispatches Goals deferred during maintenance");
+
+const toolResult = await harness.executeTool("inspect-operation-state", {}, {
+  companyId,
+  agentId: ownerId,
+  runId: "run-tool-inspection",
+});
+assert.equal(toolResult.data.autonomy.deliveryControl, "paperclip-native");
+
+await harness.emit("agent.run.started", { agentId: ownerId }, { companyId });
 await harness.emit("agent.run.started", { agentId: workerId }, { companyId });
-await harness.emit("agent.run.started", { agentId: workerId }, { companyId });
-data = await harness.getData("operation-control", { companyId });
-assert.equal(data.state.mode, "normal");
-assert.equal(data.runBudget.count, 2);
-assert.equal(data.runBudget.limit, 2);
-await harness.emit("agent.run.started", { agentId: workerId }, { companyId });
+await harness.emit("agent.run.started", { agentId: ownerId }, { companyId });
 data = await harness.getData("operation-control", { companyId });
 assert.equal(data.state.mode, "maintenance");
-assert.match(data.state.reason, /Hourly run limit exceeded \(3\/2\)/);
-assert.equal(data.agents.find((item) => item.id === workerId).status, "paused");
-assert.equal(data.agents.find((item) => item.id === ownerId).status, "paused");
+assert.match(data.state.reason ?? "", /Hourly run limit exceeded \(3\/2\)/);
+
 await harness.performAction("resume-normal", {}, { companyId, actor: human });
 data = await harness.getData("operation-control", { companyId });
 assert.equal(data.state.mode, "normal");
 assert.equal(data.runBudget.count, 0);
-assert.equal(data.agents.find((item) => item.id === manualPauseId).status, "paused");
-
-const steward = { type: "agent", agentId: ownerId, runId: "run-steward" };
-const builder = { type: "agent", agentId: workerId, runId: "run-builder" };
-
-const goal = await harness.ctx.goals.create({
-  companyId,
-  title: "Workflow contract",
-  description: "Verify human gates and recursive Task review.",
-  level: "company",
-  status: "active",
-});
-const createIssue = harness.ctx.issues.create;
-harness.ctx.issues.create = async (input) => {
-  if (input.originKind === "plugin:local.operation-control:delivery-orchestration") {
-    harness.ctx.issues.create = createIssue;
-    throw new Error("injected orchestration create failure");
-  }
-  return createIssue(input);
-};
-await assert.rejects(
-  () => harness.performAction("adopt-goal", { goalId: goal.id }, { companyId, actor: human }),
-  /injected orchestration create failure/,
-);
-data = await harness.getData("operation-control", { companyId });
-assert.equal(data.delivery.state.goalId, goal.id);
-assert.equal(data.delivery.state.phase, "goal_registered");
-let orchestrationTasks = await harness.ctx.issues.list({
-  companyId,
-  originKind: "plugin:local.operation-control:delivery-orchestration",
-  originId: `${goal.id}:draft-milestone`,
-  includePluginOperations: true,
-  limit: 1,
-});
-assert.equal(orchestrationTasks.length, 0);
-const recoveredCreate = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
-assert.equal(recoveredCreate.status, "created");
-orchestrationTasks = await harness.ctx.issues.list({
-  companyId,
-  originKind: "plugin:local.operation-control:delivery-orchestration",
-  includePluginOperations: true,
-  limit: 100,
-});
-orchestrationTasks = orchestrationTasks.filter((issue) => issue.id === recoveredCreate.issueId);
-assert.equal(orchestrationTasks[0]?.assigneeAgentId, ownerId);
-assert.match(orchestrationTasks[0]?.description ?? "", /api\/plugins\/tools\/execute/);
-const repaired = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
-assert.equal(repaired.status, "woken");
-assert.equal(repaired.issueId, orchestrationTasks[0]?.id);
-await harness.ctx.issues.update(orchestrationTasks[0].id, { status: "done" }, companyId);
-const recreated = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
-assert.equal(recreated.status, "created");
-assert.notEqual(recreated.issueId, recoveredCreate.issueId);
-assert.equal((await harness.ctx.issues.get(recreated.issueId, companyId)).assigneeAgentId, ownerId);
-await harness.ctx.issues.update(recreated.issueId, { status: "done" }, companyId);
-await assert.rejects(
-  () => harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: steward }),
-  /requires a human actor/,
-);
-await harness.performAction("start-maintenance", {
-  ownerAgentId: ownerId,
-  stopPolicy: "immediate",
-}, { companyId, actor: human });
-await assert.rejects(
-  () => harness.performAction("propose-milestone", {
-    goalId: goal.id,
-    title: "Must wait for normal operation",
-    description: "This proposal must not be accepted during maintenance.",
-  }, { companyId, actor: steward }),
-  /require normal Company operation/,
-);
-await harness.performAction("resume-normal", {}, { companyId, actor: human });
-const rejectedMilestone = await harness.performAction("propose-milestone", {
-  goalId: goal.id,
-  title: "Incomplete delivery slice",
-  description: "Required scope is still unclear.",
-}, { companyId, actor: steward });
-const gateStateBeforeRepair = await harness.getData("delivery-control", { companyId, goalId: goal.id });
-const gateIssuesBeforeRepair = await harness.ctx.issues.list({
-  companyId,
-  includePluginOperations: true,
-  limit: 100,
-});
-const gatedRepair = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
-assert.deepEqual(gatedRepair, { status: "human_gate", phase: "milestone_pending" });
-const gateStateAfterRepair = await harness.getData("delivery-control", { companyId, goalId: goal.id });
-const gateIssuesAfterRepair = await harness.ctx.issues.list({
-  companyId,
-  includePluginOperations: true,
-  limit: 100,
-});
-assert.equal(gateStateAfterRepair.state.phase, gateStateBeforeRepair.state.phase);
-assert.equal(gateStateAfterRepair.state.milestoneId, gateStateBeforeRepair.state.milestoneId);
-assert.equal(gateStateAfterRepair.state.rootTaskId, gateStateBeforeRepair.state.rootTaskId);
-assert.deepEqual(
-  gateIssuesAfterRepair.map((issue) => issue.id).sort(),
-  gateIssuesBeforeRepair.map((issue) => issue.id).sort(),
-);
-const requestedChanges = await harness.performAction("confirm-milestone", {
-  goalId: goal.id,
-  decision: "rejected",
-  reason: "Separate the required scope from optional Backlog.",
-}, { companyId, actor: human });
-assert.equal(requestedChanges.phase, "goal_registered");
-assert.equal((await harness.ctx.goals.get(rejectedMilestone.id, companyId)).status, "cancelled");
-const revisionTasks = await harness.ctx.issues.list({
-  companyId,
-  originKind: "plugin:local.operation-control:delivery-orchestration",
-  originId: `${rejectedMilestone.id}:revise-milestone`,
-  includePluginOperations: true,
-  limit: 1,
-});
-assert.match(revisionTasks[0]?.description ?? "", /Required scope is still unclear/);
-assert.match(revisionTasks[0]?.description ?? "", /related-project-id/);
-const milestone = await harness.performAction("propose-milestone", {
-  goalId: goal.id,
-  title: "First delivery slice",
-  description: "## Required scope\n\n- Deliver the verified slice.\n\n## Optional Backlog\n\n- None.",
-}, { companyId, actor: steward });
-await assert.rejects(
-  () => harness.performAction("create-root-task", {
-    goalId: goal.id,
-    title: "Should wait for human",
-    assigneeAgentId: workerId,
-  }, { companyId, actor: steward }),
-  /human-confirmed/,
-);
-const requestWakeup = harness.ctx.issues.requestWakeup;
-harness.ctx.issues.requestWakeup = async (issueId, scopedCompanyId, options) => {
-  harness.ctx.issues.requestWakeup = requestWakeup;
-  throw new Error("injected orchestration wakeup failure");
-};
-await assert.rejects(
-  () => harness.performAction("confirm-milestone", {
-    goalId: goal.id,
-    decision: "accepted",
-  }, { companyId, actor: human }),
-  /injected orchestration wakeup failure/,
-);
-orchestrationTasks = await harness.ctx.issues.list({
-  companyId,
-  originKind: "plugin:local.operation-control:delivery-orchestration",
-  originId: `${milestone.id}:create-root-task`,
-  includePluginOperations: true,
-  limit: 1,
-});
-assert.equal(orchestrationTasks[0]?.assigneeAgentId, ownerId);
-const repairWakeups = [];
-harness.ctx.issues.requestWakeup = async (issueId, scopedCompanyId, options) => {
-  repairWakeups.push({ issueId, scopedCompanyId, options });
-  harness.ctx.issues.requestWakeup = requestWakeup;
-  throw new Error("injected repair wakeup failure");
-};
-await assert.rejects(
-  () => harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human }),
-  /injected repair wakeup failure/,
-);
-orchestrationTasks = await harness.ctx.issues.list({
-  companyId,
-  originKind: "plugin:local.operation-control:delivery-orchestration",
-  includePluginOperations: true,
-  limit: 100,
-});
-const pendingRootCreationTasks = orchestrationTasks.filter((issue) => (
-  issue.goalId === milestone.id
-  && !["done", "cancelled"].includes(issue.status)
-));
-assert.deepEqual(pendingRootCreationTasks.map((issue) => issue.id), [repairWakeups[0]?.issueId]);
-harness.ctx.issues.requestWakeup = async (issueId, scopedCompanyId, options) => {
-  repairWakeups.push({ issueId, scopedCompanyId, options });
-  return requestWakeup(issueId, scopedCompanyId, options);
-};
-const recoveredWakeup = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
-harness.ctx.issues.requestWakeup = requestWakeup;
-assert.equal(recoveredWakeup.status, "woken");
-assert.equal(recoveredWakeup.issueId, pendingRootCreationTasks[0]?.id);
-assert.equal(repairWakeups.length, 2);
-assert.equal(repairWakeups[0].issueId, repairWakeups[1].issueId);
-assert.equal(repairWakeups[0].options.contextSource, "operation-control:delivery-repair");
-assert.equal(repairWakeups[0].options.idempotencyKey, repairWakeups[1].options.idempotencyKey);
-assert.match(repairWakeups[0].options.idempotencyKey, new RegExp(`^${pendingRootCreationTasks[0].id}:repair:`));
-await assert.rejects(
-  () => harness.performAction("create-root-task", {
-    goalId: goal.id,
-    title: "Orchestrator must not execute",
-    assigneeAgentId: ownerId,
-  }, { companyId, actor: steward }),
-  /active execution Agent/,
-);
-const root = await harness.performAction("create-root-task", {
-  goalId: goal.id,
-  projectId,
-  title: "Delivery root",
-  assigneeAgentId: workerId,
-}, { companyId, actor: steward });
-await harness.ctx.issues.update(root.id, { status: "blocked" }, companyId, { actorAgentId: workerId });
-await harness.emit("issue.updated", { issueId: root.id }, {
-  companyId,
-  entityId: root.id,
-  entityType: "issue",
-  actorType: "agent",
-  actorId: workerId,
-});
-let blockerTriage = await harness.ctx.issues.list({
-  companyId,
-  originKind: "plugin:local.operation-control:delivery-blocker-triage",
-  originId: `${root.id}:episode:1`,
-  includePluginOperations: true,
-  limit: 10,
-});
-assert.equal(blockerTriage.length, 1);
-assert.equal(blockerTriage[0].parentId, null);
-assert.equal(blockerTriage[0].goalId, goal.id);
-assert.equal(blockerTriage[0].assigneeAgentId, ownerId);
-assert.match(blockerTriage[0].description ?? "", /active Task tree unchanged/);
-assert.match(blockerTriage[0].description ?? "", /Do not modify the product workspace/);
-await harness.emit("issue.updated", { issueId: root.id }, {
-  companyId,
-  entityId: root.id,
-  entityType: "issue",
-  actorType: "agent",
-  actorId: workerId,
-});
-blockerTriage = await harness.ctx.issues.list({
-  companyId,
-  originKind: "plugin:local.operation-control:delivery-blocker-triage",
-  includePluginOperations: true,
-  limit: 10,
-});
-assert.equal(blockerTriage.filter((issue) => issue.originId?.startsWith(root.id)).length, 1);
-await harness.ctx.issues.update(root.id, { status: "todo" }, companyId);
-await harness.emit("issue.updated", { issueId: root.id }, {
-  companyId,
-  entityId: root.id,
-  entityType: "issue",
-  actorType: "plugin",
-  actorId: null,
-});
-await harness.ctx.issues.update(root.id, { status: "blocked" }, companyId, { actorAgentId: workerId });
-await harness.emit("issue.updated", { issueId: root.id }, {
-  companyId,
-  entityId: root.id,
-  entityType: "issue",
-  actorType: "agent",
-  actorId: workerId,
-});
-blockerTriage = await harness.ctx.issues.list({
-  companyId,
-  originKind: "plugin:local.operation-control:delivery-blocker-triage",
-  includePluginOperations: true,
-  limit: 10,
-});
-assert.equal(blockerTriage.filter((issue) => issue.originId?.startsWith(root.id)).length, 2);
-await harness.ctx.issues.update(root.id, { status: "backlog" }, companyId, { actorAgentId: ownerId });
-await assert.rejects(
-  () => harness.performAction("create-child-task", {
-    parentIssueId: root.id,
-    title: "Backlog child",
-    assigneeAgentId: manualPauseId,
-  }, { companyId, actor: builder }),
-  /promoted to todo/,
-);
-await harness.ctx.issues.update(root.id, { status: "todo" }, companyId, { actorAgentId: ownerId });
-await assert.rejects(
-  () => harness.performAction("create-child-task", {
-    parentIssueId: root.id,
-    title: "Paused executor",
-    assigneeAgentId: manualPauseId,
-  }, { companyId, actor: builder }),
-  /active and invokable/,
-);
-const childOne = await harness.performAction("create-child-task", {
-  parentIssueId: root.id,
-  title: "Child one",
-  assigneeAgentId: reviewerId,
-}, { companyId, actor: builder });
-const childTwo = await harness.performAction("create-child-task", {
-  parentIssueId: root.id,
-  title: "Child two",
-  assigneeAgentId: reviewerId,
-  blockedByIssueIds: [childOne.id],
-}, { companyId, actor: builder });
-assert.equal(childTwo.parentId, root.id);
-assert.deepEqual((await harness.ctx.issues.relations.get(childTwo.id, companyId)).blockedBy.map((item) => item.id), [childOne.id]);
-await harness.ctx.issues.update(childTwo.id, { status: "blocked" }, companyId, { actorAgentId: reviewerId });
-await harness.emit("issue.updated", { issueId: childTwo.id }, {
-  companyId,
-  entityId: childTwo.id,
-  entityType: "issue",
-  actorType: "agent",
-  actorId: reviewerId,
-});
-const dependencyTriage = await harness.ctx.issues.list({
-  companyId,
-  originKind: "plugin:local.operation-control:delivery-blocker-triage",
-  originId: `${childTwo.id}:episode:1`,
-  includePluginOperations: true,
-  limit: 1,
-});
-assert.equal(dependencyTriage.length, 0);
-await assert.rejects(
-  () => harness.performAction("review-node", {
-    issueId: root.id,
-    decision: "approved",
-  }, { companyId, actor: builder }),
-  /terminal/,
-);
-await harness.ctx.issues.update(childOne.id, { status: "done" }, companyId, { actorAgentId: reviewerId });
-await harness.ctx.issues.update(childTwo.id, { status: "done" }, companyId, { actorAgentId: reviewerId });
-const firstNodeRejection = await harness.performAction("review-node", {
-  issueId: root.id,
-  decision: "rejected",
-  reason: "Evidence does not satisfy the Node contract",
-  assigneeAgentId: reviewerId,
-}, { companyId, actor: builder });
-const firstNodeRemediation = await harness.ctx.issues.get(firstNodeRejection.remediationIssueId, companyId);
-assert.equal(firstNodeRemediation?.parentId, root.id);
-await harness.ctx.issues.update(
-  firstNodeRejection.remediationIssueId,
-  { status: "done" },
-  companyId,
-  { actorAgentId: reviewerId },
-);
-const childrenBeforeSecondNodeRejection = await harness.ctx.issues.getSubtree(root.id, companyId, { includeRoot: false });
-await assert.rejects(
-  () => harness.performAction("review-node", {
-    issueId: root.id,
-    decision: "rejected",
-    reason: "The same Node contract is still not satisfied",
-    assigneeAgentId: reviewerId,
-  }, { companyId, actor: builder }),
-  /rejected twice/,
-);
-const childrenAfterSecondNodeRejection = await harness.ctx.issues.getSubtree(root.id, companyId, { includeRoot: false });
-assert.equal(childrenAfterSecondNodeRejection.issues.length, childrenBeforeSecondNodeRejection.issues.length);
-assert.equal(await harness.ctx.state.get({
-  scopeKind: "issue",
-  scopeId: root.id,
-  stateKey: "delivery-node-rejection-count",
-}), 2);
-const rootReview = await harness.performAction("review-node", {
-  issueId: root.id,
-  decision: "approved",
-}, { companyId, actor: builder });
-assert.equal(rootReview.next, "milestone_report");
-let delivery = await harness.getData("delivery-control", { companyId, goalId: goal.id });
-assert.equal(delivery.state.phase, "executing");
-assert.equal(delivery.root.id, root.id);
-assert.equal(delivery.root.status, "in_review");
-assert.equal(delivery.root.assigneeAgentId, ownerId);
-
-const reportPath = `docs/milestones/${milestone.id}.md`;
-await assert.rejects(
-  () => harness.executeTool("request-milestone-review", {
-    goalId: goal.id,
-    reportPath,
-    commitSha: "abc123",
-    summary: "Ready for review.",
-  }, { companyId, agentId: ownerId, runId: "run-report" }),
-  /full Git commit SHA/,
-);
-await assert.rejects(
-  () => harness.executeTool("request-milestone-review", {
-    goalId: goal.id,
-    reportPath,
-    commitSha: "f".repeat(40),
-    summary: "Unknown commit.",
-  }, { companyId, agentId: ownerId, runId: "run-unknown-commit" }),
-  /does not exist in the Root Task workspace/,
-);
-await assert.rejects(
-  () => harness.executeTool("request-milestone-review", {
-    goalId: goal.id,
-    reportPath,
-    commitSha: baselineCommit,
-    summary: "Report is not committed yet.",
-  }, { companyId, agentId: ownerId, runId: "run-missing-report" }),
-  /does not contain the Milestone report/,
-);
-mkdirSync(join(gitWorkspace, "docs", "milestones"), { recursive: true });
-writeFileSync(join(gitWorkspace, reportPath), "# First completion report\n");
-git("add", reportPath);
-git("commit", "-qm", "first milestone report");
-const firstCommit = git("rev-parse", "HEAD");
-const firstRequest = await harness.executeTool("request-milestone-review", {
-  goalId: goal.id,
-  reportPath,
-  commitSha: firstCommit,
-  summary: "First completion report.",
-  evidence: "All scoped checks passed.",
-}, { companyId, agentId: ownerId, runId: "run-report" });
-assert.equal(firstRequest.data.phase, "awaiting_human_confirmation");
-assert.equal(firstRequest.data.report.path, reportPath);
-assert.equal(firstRequest.data.report.commitSha, firstCommit);
-await assert.rejects(
-  () => harness.performAction("record-milestone-confirmation", {
-    goalId: goal.id,
-    decision: "accepted",
-  }, { companyId, actor: steward }),
-  /human actor/,
-);
-
-const remediation = await harness.performAction("record-milestone-confirmation", {
-  goalId: goal.id,
-  decision: "rejected",
-  reason: "Human acceptance evidence is incomplete.",
-  assigneeAgentId: reviewerId,
-}, { companyId, actor: human });
-assert.equal(remediation.phase, "executing");
-const rejectedRoot = await harness.ctx.issues.get(root.id, companyId);
-assert.equal(rejectedRoot.status, "in_progress");
-assert.equal(rejectedRoot.assigneeAgentId, workerId);
-const remediationIssue = await harness.ctx.issues.get(remediation.remediationIssueId, companyId);
-assert.equal(remediationIssue.parentId, root.id);
-
-const rogueChild = await harness.ctx.issues.create({
-  companyId,
-  parentId: root.id,
-  goalId: milestone.id,
-  title: "Rogue child",
-  status: "todo",
-  priority: "low",
-  assigneeAgentId: reviewerId,
-  actor: { actorAgentId: workerId },
-});
-await harness.emit("issue.created", { issueId: rogueChild.id }, {
-  companyId,
-  entityId: rogueChild.id,
-  entityType: "issue",
-  actorType: "agent",
-  actorId: workerId,
-});
-assert.equal((await harness.ctx.issues.get(rogueChild.id, companyId)).status, "cancelled");
-
-await harness.ctx.issues.update(root.id, { status: "done" }, companyId, { actorAgentId: workerId });
-await harness.emit("issue.updated", { issueId: root.id }, {
-  companyId,
-  entityId: root.id,
-  entityType: "issue",
-  actorType: "agent",
-  actorId: workerId,
-});
-assert.equal((await harness.ctx.issues.get(root.id, companyId)).status, "in_review");
-await harness.ctx.issues.update(remediationIssue.id, { status: "done" }, companyId, { actorAgentId: reviewerId });
-await harness.performAction("review-node", {
-  issueId: root.id,
-  decision: "approved",
-}, { companyId, actor: builder });
-writeFileSync(join(gitWorkspace, reportPath), "# Remediated completion report\n");
-git("add", reportPath);
-git("commit", "-qm", "remediate milestone report");
-const secondCommit = git("rev-parse", "HEAD");
-const secondRequest = await harness.executeTool("request-milestone-review", {
-  goalId: goal.id,
-  reportPath,
-  commitSha: secondCommit,
-  summary: "Remediated completion report.",
-}, { companyId, agentId: ownerId, runId: "run-report-2" });
-await harness.performAction("record-milestone-confirmation", {
-  goalId: goal.id,
-  decision: "accepted",
-}, { companyId, actor: human });
-delivery = await harness.getData("delivery-control", { companyId, goalId: goal.id });
-assert.equal(delivery.state.phase, "completed");
-assert.equal(delivery.milestone.status, "achieved");
-assert.equal(delivery.root.status, "done");
-
-const nextMilestone = await harness.performAction("propose-milestone", {
-  goalId: goal.id,
-  title: "Second delivery slice",
-  description: "## Required scope\n\n- Plan the next verified slice.",
-}, { companyId, actor: steward });
-assert.notEqual(nextMilestone.id, milestone.id);
-delivery = await harness.getData("delivery-control", { companyId, goalId: goal.id });
-assert.equal(delivery.state.phase, "milestone_pending");
-assert.equal(delivery.state.milestoneId, nextMilestone.id);
-assert.equal(delivery.state.rootTaskId, null);
-assert.equal((await harness.ctx.goals.get(milestone.id, companyId)).status, "achieved");
 
 console.log("operation-control: ok");

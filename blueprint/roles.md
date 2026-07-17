@@ -1,48 +1,30 @@
 # Role Blueprint
 
-Paperclip의 `role` enum은 권한과 UI를 위한 호환 값이고, 실제 Role 계약은 Agent의 이름, title, capabilities와 instructions가 정한다.
+Paperclip의 `role` enum은 권한과 UI를 위한 호환 값이고 실제 행동은 Agent instructions와 현재 Task의 native execution policy가 정한다. Role은 전문성이지 고정 workflow 단계가 아니다.
 
-## 표준 조직
+## 역할
 
-```text
-Board (Human owner)
-└── Product Steward
-    ├── Prototyper 1..N
-    ├── Builder 1..N
-    ├── Sweeper 1..N
-    ├── Grower 1..N
-    └── Maintainer 1..N
-```
+| Role | Paperclip role | 책임 |
+|---|---|---|
+| Board | Human | Goal, autonomy envelope, 고위험 승인과 예외 판단 |
+| Product Steward | `ceo` | 목표 해석, 위험 분류, Task 분해·배정, 진행과 완료 보고 |
+| Builder | `engineer` | 제품 구현과 결정적 검증 |
+| Prototyper | `researcher` | 불확실성이 큰 해법 비교 |
+| Grower | `pm` | 사용자·eval 근거 기반 개선 |
+| Sweeper | `qa` | 독립 review, 단순화와 제거 |
+| Maintainer | `devops` | 신뢰성·보안·성능·비용과 maintenance |
+| System Auditor | `researcher` | 아직 규칙으로 포착되지 않은 운영 문제 조사 |
 
-| Role | Paperclip role | 책임 | 기본 권한 |
-|---|---|---|---|
-| Board | Human | Charter, 예산, 고위험 승인 | 모든 관리 권한 |
-| Product Steward | `ceo` | 인간 요청 해석, Goal·Milestone, Role 배치, keep/kill과 단계 전환 | Task 배정, 승인된 Agent 채용 요청, Skill 관리 |
-| Prototyper | `researcher` | 여러 해법 탐색, Prototype와 비교 근거 | 격리 workspace 또는 Artifact 쓰기 |
-| Builder | `engineer` | 선택된 해법의 제품화와 테스트 | 제품 workspace 쓰기 |
-| Sweeper | `qa` | UI·코드·기능 단순화, 제거, 성능 개선과 선택 Backlog 정리 | 제품 workspace 쓰기와 삭제, 근거가 있는 Backlog 취소 |
-| Grower | `pm` | 사용 근거와 eval 기반 반복 개선 | 근거 읽기, 승인된 실험 쓰기 |
-| Maintainer | `devops` | 보안, 신뢰성, 성능, 비용, 장애와 유지보수 | 제품 workspace와 운영 근거 쓰기, Maintenance owner |
+Company는 Product Steward, executor와 독립 reviewer만 있으면 시작할 수 있다. 나머지 Role은 실제 backlog가 생겼을 때 추가한다.
 
-Ops 시스템 자체를 제품으로 운영하는 Company는 선택형 `System Auditor`(`researcher`)를 Product Steward 직속으로 둘 수 있다. System Auditor는 알려진 규칙을 검사하는 Company Integrity Check와 달리 아직 규칙으로 포착되지 않은 불완전성을 찾아 Backlog로 제안하며 직접 수정하거나 `todo`로 승격하지 않는다.
+## 공통 규칙
 
-## Paperclip 제약을 반영한 공통 규칙
-
-- 모든 실행 Role은 Product Steward 한 명에게 직접 보고한다. Paperclip의 `reportsTo`는 하나만 허용한다.
-- Product Steward는 Root Task와 Agent 간 배정을 담당한다. Node 담당 Agent는 Operation Control의 `create-child-task`로 자신이 맡은 Node 아래만 분해할 수 있고 Goal·Milestone·형제 범위를 바꾸거나 다른 Root를 만들 수 없다. 도구를 사용할 수 없으면 Product Steward가 분해안을 받아 같은 제한 도구로 child 생성을 대행한다.
-- 사람의 요청은 Goal로 등록한다. Product Steward는 Milestone의 필수 작업만 `todo`로 만들고 선택 작업은 active Task tree 밖의 `backlog`로 둔다. Sweeper는 근거가 있는 Backlog를 취소할 수 있지만 `todo` 승격은 Product Steward만 수행한다.
-- `todo` Task에는 delivery Role label 하나와 [Delivery 계약](delivery-lifecycle.md)을 기록한다. Backlog에는 Goal, 기대 가치, 선택인 이유와 폐기 조건만 기록한다.
-- Leaf 완료는 상위 Node 담당자가 확인하고, Node와 Root 완료는 Operation Control의 `review-node`를 통과해야 한다. 작성자와 reviewer는 달라야 하며 인간은 Milestone만 확인·거절한다.
-- Company가 native `executionPolicy`를 별도로 적용한 고위험 변경은 review 뒤 Board approval stage를 추가한다.
-- shared workspace의 writer 동시 실행은 1이다. 독립 Git history와 isolated workspace가 확인된 경우에만 병렬 writer를 늘린다.
-- Git workspace를 수정한 실행 Role은 검증 뒤 자기 Task 파일만 focused commit으로 만들고 현재 Task branch를 push한다. force push와 다른 사람의 history 재작성은 금지하며, push 실패는 local full SHA와 원본 오류를 blocker로 보고한다.
-- isolated workspace를 사용할 수 없으면 Prototyper는 shared 제품 workspace를 수정하지 않고 Issue Document, attachment 또는 work product로 결과를 남긴다.
-- Role Agent 수는 1..N이지만 같은 writable workspace를 공유하는 실행은 직렬화한다.
-- Company가 `holding` 또는 `maintenance`이면 Maintenance owner가 아닌 Agent는 새 작업을 시작하지 않는다.
-- Maintenance는 단일 owner 제약을 수용한다. Maintainer가 사전 승인된 변경과 검증을 수행하고 정상 복귀 뒤 다른 Role이 review한다.
-- 모든 Agent는 주입된 자기 인증과 actor context만 사용한다. 401/403 뒤 인증을 제거하거나 local-trusted 무인증 Board 경로로 재시도해 인간 권한을 얻지 않는다.
-- delivery blocker는 Company 전체 정지를 뜻하지 않는다. 미완료 Task dependency가 없는 human·actor·permission blocker는 Product Steward가 active tree 밖에서 triage하고, System Auditor·Sweeper의 read-only Routine은 계속하되 확인되지 않은 구현으로 승격하지 않는다.
-- Agent 생성은 Board 승인 정책을 우회하지 않는다.
-- sandbox와 approval 우회는 신뢰된 로컬 환경에서 Company Profile이 명시한 경우에만 허용한다.
-
-표준 instructions는 [role-instructions](role-instructions/)에 있고 선택형 Ops Role은 [System Auditor](role-instructions/system-auditor.md)에 있다. Agent 이름, ID, model, 예산과 실제 수는 Company Profile 값이다.
+- Product Steward만 일반 Task를 배정하고 Goal 범위를 조정한다.
+- executor는 할당된 Task를 바로 실행하고 계획만 남긴 채 멈추지 않는다.
+- 코드와 사용자 산출물은 작성자와 다른 Agent가 native review stage에서 검토한다.
+- reviewer는 별도 review Task를 만들지 않고 원래 Task에서 승인하거나 수정 요청한다.
+- 저·중위험 작업은 human confirmation 없이 완료한다.
+- 고위험 행동, scope·예산 변경과 반복 실패만 인간에게 올린다.
+- shared writable workspace의 writer는 1명이다. 격리 workspace는 안전하면 병렬 실행한다.
+- Agent는 자기 인증 경계를 유지하며 401/403 뒤 Board 권한으로 우회하지 않는다.
+- Company가 `holding` 또는 `maintenance`이면 owner 외 Agent는 새 작업을 시작하지 않는다.

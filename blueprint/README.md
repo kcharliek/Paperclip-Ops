@@ -1,58 +1,52 @@
 # AI Company Blueprint
 
-Paperclip Company를 제품과 무관하게 세팅하기 위한 전체 설계 계약이다. 제품별 설정은 이 계약을 채우는 Company Profile이며 [AllNewMTS](../references/allnewmts/README.md)는 첫 reference다.
+Paperclip Company가 인간의 Goal을 받아 계획, 분해, 실행, AI review와 보완을 스스로 이어가는 표준 계약이다. 인간은 자율 실행 범위를 정하고 예외만 판단한다.
 
-## 표준 조직
+## 기본 조직
 
 ```text
 Board (Human owner)
 └── Product Steward
-    ├── Prototyper 1..N
-    ├── Builder 1..N
-    ├── Sweeper 1..N
-    ├── Grower 1..N
-    └── Maintainer 1..N
+    ├── Builder / domain executor 1..N
+    └── Reviewer 1..N
 ```
 
-[Role 계약](roles.md)은 책임과 권한을, [Delivery Lifecycle](delivery-lifecycle.md)은 Task 표현과 Role 전환을, [Goal → Milestone → Task Workflow](goal-milestone-task-workflow.md)는 승인과 재진입을 정한다.
+Prototyper, Grower, Sweeper, Maintainer와 System Auditor는 실제 전문 작업이 있을 때 executor 또는 reviewer로 참여한다. Role 수가 workflow 단계 수를 뜻하지 않으며, 모든 Role을 매 Task에 순차 투입하지 않는다.
 
-## Company Profile에 필요한 값
+[Role 계약](roles.md)은 책임과 권한을, [Delivery Lifecycle](delivery-lifecycle.md)은 native review와 위험도 정책을, [Goal → Autonomous Task Workflow](goal-task-workflow.md)는 자동 진행과 escalation을 정한다.
+
+## Company Profile 필수 값
 
 | 영역 | 필수 값 |
 |---|---|
 | Charter | 목적, 완료 조건, issue prefix |
-| Governance | Board owner, Agent 생성 승인, 예산과 고위험 기준 |
-| Knowledge | 하나의 도메인 [Company Skill](company-skill.md) |
-| Organization | 표준 Role별 Agent 이름, 수, Paperclip role mapping과 보고선 |
-| Delivery | Company Goal, `team` Goal Milestone, active Milestone 하나, Project와 Role label |
-| Runtime | writable workspace, read-only sources, model, concurrency와 격리 가능 여부 |
-| Operations | Maintainer, [Company Integrity Check](company-integrity-routine.md), `drain` 또는 `immediate`, 시간당 Company run 상한, 신뢰성 기준 |
+| Autonomy envelope | writable 범위, 금지 행동, 시간·비용 상한, 위험도 기준 |
+| Organization | Product Steward, executor와 독립 reviewer 후보 |
+| Knowledge | 도메인 [Company Skill](company-skill.md) |
+| Delivery | Company Goal, Project, native Task와 `executionPolicy` |
+| Runtime | workspace, model, writer 동시성, 격리 가능 여부 |
+| Operations | Maintainer, [Company Integrity Check](company-integrity-routine.md), maintenance 정책과 run 상한 |
 
 ## 공통 실행 흐름
 
-1. Board가 Charter와 Company Profile을 승인한다.
-2. 사람은 Goal을 등록하고, Product Steward가 만든 Milestone 초안을 확인하거나 거절한다.
-3. 확인된 Milestone을 바탕으로 Product Steward와 실행 Agent가 Root 하나와 그 아래 Node·child Task tree를 만든다.
-4. Product Steward가 제품 상태에 맞는 Delivery Role과 entry·exit gate를 정한다.
-5. Prototyper는 여러 후보를 만들고 Product Steward는 keep 또는 kill을 결정한다.
-6. Builder는 선택된 후보를 제품화하고 Operation Control의 독립 review를 거친다.
-7. Grower는 사용자·eval 근거로 개선을 요청하고 Sweeper는 불필요한 복잡성을 제거한다.
-8. Maintainer는 Company Integrity Check와 승인된 보정으로 운영 가능한 시스템의 보안, 신뢰성, 성능과 비용을 책임진다.
-9. Leaf는 상위 Node 담당자가 확인하고, Root 담당자가 Git Milestone 보고서를 commit한 뒤 Product Steward가 Operation Control의 Board 검토 대기 상태로 제출한다.
-10. Maintainer가 필요하면 [Maintenance](../docs/architecture.md)를 요청하고 단일 owner로 실행한 뒤 `normal`로 복귀한다.
+1. 인간이 Goal과 autonomy envelope를 등록한다.
+2. Operation Control이 Goal당 하나의 native Task를 Product Steward에게 자동 배정한다.
+3. Product Steward가 Project와 현재 상태를 읽고 바로 실행 Task를 만든다.
+4. 코드와 사용자 산출물 Task에는 작성자와 다른 Agent의 native `review` stage를 붙인다.
+5. executor가 구현과 결정적 검증을 마치고 Task를 `in_review`로 전환한다.
+6. reviewer는 같은 Task에서 승인하거나 `in_progress`로 돌려보낸다. 보완은 자동으로 계속한다.
+7. 되돌리기 어려운 고위험 행동에만 native human `approval` stage를 추가한다.
+8. 모든 Task가 끝나면 Product Steward가 Goal 결과를 한 번 보고하고 다음 Goal을 기다린다.
 
 ## 설정 순서
 
-1. Company와 Board를 만든다.
-2. Product Steward를 만들고 Board 보고선과 Task 배정 권한을 검증한다.
-3. Prototyper, Builder, Sweeper, Grower와 Maintainer를 각각 한 명 이상 만든다.
-4. 다섯 Role label과 Operation Control review 규칙을 연결하고, native approval stage를 쓸 경우 실제 policy 적용 여부를 검증한다.
-5. Company Skill과 writable workspace를 연결한다.
-6. Company Goal 하나를 만들고 Product Steward가 첫 `team` Goal Milestone 초안을 만든다.
-7. 사람이 Milestone을 확인한 뒤 Root Task, 제한된 child 분해와 review 경로를 연결한다.
-8. workspace의 Git 기준점과 isolated workspace 지원 여부를 확인하고 안전한 실행 policy를 선택한다.
-9. Operation Control의 owner를 Maintainer로 선택하고 `drain → maintenance → normal`을 시험한다.
-10. Company Integrity Check Routine을 연결하고 healthy no-op과 이상 보고를 시험한다.
-11. Leaf 확인 → Node review → Root review → Milestone 사람 확인의 한 사이클을 검증한다.
+1. Company, Board, Project와 workspace를 만든다.
+2. Product Steward 한 명과 executor·reviewer 후보를 만든다.
+3. Agent instructions와 Company Skill을 연결한다.
+4. Product Steward에게 Task 배정 권한을 주고 나머지 권한은 필요한 범위로 제한한다.
+5. Operation Control의 Goal auto-dispatch와 maintenance 전이를 확인한다.
+6. 일반 Task에 Agent review stage만 적용해 구현→review→보완→완료를 검증한다.
+7. disposable 고위험 Task에 Agent review 뒤 human approval stage를 적용해 승인 전 행동이 멈추는지 확인한다.
+8. Company Integrity Check의 healthy no-op을 확인한다.
 
-Company 생성 자동화는 두 번째 Company에서도 같은 입력 구조가 확인된 뒤 추가한다.
+역할 문구 변경은 정적 검사로 끝낸다. Plugin 상태 전이가 바뀔 때만 plugin unit test를 실행하고, Paperclip 전체 black-box 검증은 릴리스 후보 또는 공통 실행 경로 변경에만 수행한다.

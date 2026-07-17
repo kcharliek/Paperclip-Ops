@@ -1,44 +1,38 @@
 # AI Company 설계 지도
 
-이 저장소의 중심은 특정 Company가 아니라 반복 적용할 수 있는 [AI Company Blueprint](../blueprint/README.md)다.
-
 ## 설계 계층
 
 ```text
 AI Company Blueprint
 ├── Charter: 목적과 완료 조건
-├── Governance: Board, 승인, 예산
-├── Organization: Board, Product Steward, 5개 실행 Role, 보고선, 권한
+├── Autonomy: 허용 범위, 금지 행동, 예산과 위험도
+├── Organization: Steward, executor, reviewer
 ├── Knowledge: Company Skill
-├── Delivery: Company Goal, Team Goal Milestone, Project, Task tree, review
-├── Runtime: model, environment, workspace, concurrency
-└── Operations: 상태, maintenance, routine, plugin
+├── Delivery: native Goal, Task tree, review와 예외 approval
+├── Runtime: model, workspace, concurrency
+└── Operations: maintenance, run cap, integrity routine
 ```
 
-## 고정 설계와 Company Profile
+## Blueprint와 Company Profile
 
 | Blueprint가 정한다 | Company Profile이 채운다 |
 |---|---|
-| Role의 책임 경계와 권한 원칙 | 회사 목적, 이름, issue prefix |
-| Goal → Milestone → Task tree, label, Gate, 배정과 review 흐름 | Agent 이름과 수, 제품 workspace와 읽기 전용 근거 |
-| Company Skill의 구조 | 도메인 계약과 완료 조건 |
-| `normal → holding → maintenance` 상태 모델 | Maintenance owner와 정지 정책 |
-| shared workspace 동시성 원칙 | model, 예산, timeout |
-| 설정 검증 순서 | Goal, Project와 단계별 roadmap |
-
-제품 고유 이름, ID, 경로와 도메인 규칙은 Blueprint에 넣지 않는다.
+| 자동 진행과 exception-only human gate | 회사 목적, autonomy envelope와 위험 예시 |
+| native Issue와 execution policy 사용 | Agent ID, reviewer 후보와 Board user ID |
+| Role 책임과 권한 원칙 | 이름, model, 예산, timeout |
+| maintenance와 run cap | owner, stop policy와 상한 |
+| 검증 단계 | 제품별 테스트와 workspace |
 
 ## 개선 루프
 
 ```text
 실제 Company 관찰
   → Reference 갱신
-  → Ops Company의 System Auditor가 개선 Backlog로 분류
-  → 반복되는 문제만 Blueprint에 반영
-  → Company Profile에 적용
+  → System Auditor가 반복 문제를 Backlog로 제안
+  → 새 Goal 범위에 채택
+  → Agent 구현 + native review
+  → 고위험 행동만 human approval
   → API와 실제 run으로 검증
 ```
 
-한 Company에서 한 번 발생한 문제는 우선 reference drift다. 두 번째 Company에서도 필요한 규칙임이 확인될 때 범용 Blueprint로 올린다.
-
-Ops Company의 조직과 승인 경계는 [Paperclip Ops Company](ops-company.md)에 있다.
+한 번 발생한 문제는 reference drift로 남기고 둘 이상의 Company에서 반복될 때 Blueprint 후보로 올린다. 개선 자체도 별도 custom Milestone 없이 같은 native delivery 흐름을 사용한다.

@@ -1,11 +1,8 @@
-import { spawnSync } from "node:child_process";
 import {
   definePlugin,
   runWorker,
   type Agent,
   type Goal,
-  type Issue,
-  type PluginContext,
   type PluginEvent,
   type ToolRunContext,
 } from "@paperclipai/plugin-sdk";
@@ -23,66 +20,16 @@ export interface OperationState {
   changedAt: string;
 }
 
-const STATE_KEY = "operation-state";
-const HOURLY_RUN_BUDGET_KEY = "hourly-run-budget";
-const ARTIFACT_ISSUE_KEY = "operation-state-issue-id";
-const PAUSED_MARKER_KEY = "paused-by-operation-control";
-const ARTIFACT_ORIGIN = "plugin:operation-control" as const;
-const DELIVERY_STATE_KEY_PREFIX = "delivery-control:";
-const ACTIVE_DELIVERY_GOAL_KEY = "active-delivery-goal-id";
-const DELIVERY_NODE_KEY = "delivery-node";
-const DELIVERY_NODE_REJECTION_COUNT_KEY = "delivery-node-rejection-count";
-const DELIVERY_MILESTONE_KEY = "delivery-milestone";
-const DELIVERY_BLOCKER_TRIAGE_KEY = "delivery-blocker-triage";
-const ORCHESTRATION_ORIGIN = "plugin:local.operation-control:delivery-orchestration" as const;
-const BLOCKER_TRIAGE_ORIGIN = "plugin:local.operation-control:delivery-blocker-triage" as const;
-
-type DeliveryPhase =
-  | "goal_registered"
-  | "milestone_pending"
-  | "milestone_confirmed"
-  | "executing"
-  | "awaiting_human_confirmation"
-  | "completed";
-
-interface DeliveryState {
-  version: 1;
-  goalId: string;
-  milestoneId: string | null;
-  rootTaskId: string | null;
-  orchestratorAgentId?: string | null;
-  rootOwnerAgentId?: string | null;
-  report?: MilestoneReport | null;
-  phase: DeliveryPhase;
-  rejectionCount: number;
-  changedAt: string;
-}
-
-interface MilestoneReport {
-  path: string;
-  commitSha: string;
-  summary: string;
-  evidence: string;
-}
-
-interface DeliveryNode {
-  rootTaskId: string;
-  goalId: string;
-  milestoneId: string;
-  parentId: string | null;
-}
-
 interface HourlyRunBudget {
   version: 1;
   windowStartedAt: string;
   count: number;
 }
 
-interface BlockerTriageMarker {
-  version: 1;
-  active: boolean;
-  episode: number;
-}
+const STATE_KEY = "operation-state";
+const HOURLY_RUN_BUDGET_KEY = "hourly-run-budget";
+const PAUSED_MARKER_KEY = "paused-by-operation-control";
+const GOAL_DISPATCH_ORIGIN = "plugin:local.operation-control:goal-dispatch" as const;
 
 const normalState = (): OperationState => ({
   version: 1,
@@ -98,139 +45,12 @@ function companyStateKey(companyId: string, stateKey: string) {
   return { scopeKind: "company" as const, scopeId: companyId, stateKey };
 }
 
-function currentHourStartedAt(): string {
-  return new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000).toISOString();
-}
-
 function agentMarkerKey(agentId: string) {
   return { scopeKind: "agent" as const, scopeId: agentId, stateKey: PAUSED_MARKER_KEY };
 }
 
-function deliveryStateKey(companyId: string, goalId: string) {
-  return {
-    scopeKind: "company" as const,
-    scopeId: companyId,
-    stateKey: `${DELIVERY_STATE_KEY_PREFIX}${goalId}`,
-  };
-}
-
-function deliveryNodeKey(issueId: string) {
-  return { scopeKind: "issue" as const, scopeId: issueId, stateKey: DELIVERY_NODE_KEY };
-}
-
-function deliveryNodeRejectionCountKey(issueId: string) {
-  return { scopeKind: "issue" as const, scopeId: issueId, stateKey: DELIVERY_NODE_REJECTION_COUNT_KEY };
-}
-
-function deliveryBlockerTriageKey(issueId: string) {
-  return { scopeKind: "issue" as const, scopeId: issueId, stateKey: DELIVERY_BLOCKER_TRIAGE_KEY };
-}
-
-function deliveryMilestoneKey(goalId: string) {
-  return { scopeKind: "goal" as const, scopeId: goalId, stateKey: DELIVERY_MILESTONE_KEY };
-}
-
-function actorAgentId(context: { actor: { type: string; agentId: string | null } }): string {
-  if (context.actor.type !== "agent" || !context.actor.agentId) {
-    throw new Error("This workflow step requires an Agent actor");
-  }
-  return context.actor.agentId;
-}
-
-function actorUser(context: { actor: { type: string; userId: string | null } }): string {
-  if (context.actor.type !== "user" || !context.actor.userId) {
-    throw new Error("This workflow step requires a human actor");
-  }
-  return context.actor.userId;
-}
-
-function stringParam(params: Record<string, unknown>, name: string): string {
-  const value = params[name];
-  if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required`);
-  return value.trim();
-}
-
-function reportCommitParam(params: Record<string, unknown>): string {
-  const value = stringParam(params, "commitSha").toLowerCase();
-  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value)) {
-    throw new Error("commitSha must be a full Git commit SHA");
-  }
-  return value;
-}
-
-function requireGit(cwd: string, args: string[], message: string): void {
-  const result = spawnSync("git", ["-C", cwd, ...args], { stdio: "ignore", timeout: 5_000 });
-  if (result.status !== 0 || result.error) throw new Error(message);
-}
-
-function isTerminal(issue: Issue): boolean {
-  return issue.status === "done" || issue.status === "cancelled";
-}
-
-function isInvokable(agent: Agent | null): agent is Agent {
-  return Boolean(agent) && !["terminated", "pending_approval", "paused"].includes(agent.status);
-}
-
-function freshDeliveryState(goalId: string): DeliveryState {
-  return {
-    version: 1,
-    goalId,
-    milestoneId: null,
-    rootTaskId: null,
-    orchestratorAgentId: null,
-    rootOwnerAgentId: null,
-    report: null,
-    phase: "goal_registered",
-    rejectionCount: 0,
-    changedAt: new Date().toISOString(),
-  };
-}
-
-function isDeliveryState(value: unknown): value is DeliveryState {
-  if (!value || typeof value !== "object") return false;
-  const state = value as Partial<DeliveryState>;
-  return state.version === 1
-    && typeof state.goalId === "string"
-    && (state.milestoneId === null || typeof state.milestoneId === "string")
-    && (state.rootTaskId === null || typeof state.rootTaskId === "string")
-    && (state.orchestratorAgentId == null || typeof state.orchestratorAgentId === "string")
-    && (state.rootOwnerAgentId == null || typeof state.rootOwnerAgentId === "string")
-    && (state.report == null || (
-      typeof state.report.path === "string"
-      && typeof state.report.commitSha === "string"
-      && typeof state.report.summary === "string"
-      && (state.report.evidence == null || typeof state.report.evidence === "string")
-    ))
-    && [
-      "goal_registered",
-      "milestone_pending",
-      "milestone_confirmed",
-      "executing",
-      "awaiting_human_confirmation",
-      "completed",
-    ].includes(state.phase ?? "")
-    && typeof state.rejectionCount === "number";
-}
-
-function readAgentId(event: PluginEvent): string | null {
-  const payload = event.payload as Record<string, unknown> | null;
-  return typeof payload?.agentId === "string" ? payload.agentId : null;
-}
-
-function readCompanyId(params: Record<string, unknown>, fallback?: string | null): string {
-  const companyId = fallback ?? params.companyId;
-  if (typeof companyId !== "string" || !companyId) throw new Error("companyId is required");
-  return companyId;
-}
-
-function isBlockerTriageMarker(value: unknown): value is BlockerTriageMarker {
-  if (!value || typeof value !== "object") return false;
-  const marker = value as Partial<BlockerTriageMarker>;
-  return marker.version === 1
-    && typeof marker.active === "boolean"
-    && typeof marker.episode === "number"
-    && Number.isInteger(marker.episode)
-    && marker.episode >= 0;
+function currentHourStartedAt(): string {
+  return new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000).toISOString();
 }
 
 function isOperationState(value: unknown): value is OperationState {
@@ -241,15 +61,59 @@ function isOperationState(value: unknown): value is OperationState {
     && ["drain", "immediate"].includes(state.stopPolicy ?? "");
 }
 
-function artifactBody(state: OperationState): string {
-  return `# Company Operation State
+function isInvokable(agent: Agent | null): agent is Agent {
+  return Boolean(agent) && !["terminated", "pending_approval", "paused"].includes(agent.status);
+}
 
-Agents must read this state before starting new work. Only \`ownerAgentId\` may work while the mode is \`holding\` or \`maintenance\`.
+function isOpenCompanyGoal(goal: Goal): boolean {
+  return goal.level === "company" && ["active", "planned"].includes(goal.status);
+}
 
-\`\`\`json
-${JSON.stringify(state, null, 2)}
-\`\`\`
-`;
+function isTerminal(status: string): boolean {
+  return status === "done" || status === "cancelled";
+}
+
+function readAgentId(event: PluginEvent): string | null {
+  const payload = event.payload as Record<string, unknown> | null;
+  return typeof payload?.agentId === "string" ? payload.agentId : null;
+}
+
+function readGoalId(event: PluginEvent): string | null {
+  const payload = event.payload as Record<string, unknown> | null;
+  if (event.entityType === "goal" && event.entityId) return event.entityId;
+  return typeof payload?.goalId === "string" ? payload.goalId : null;
+}
+
+function readCompanyId(params: Record<string, unknown>, fallback?: string | null): string {
+  const companyId = fallback ?? params.companyId;
+  if (typeof companyId !== "string" || !companyId) throw new Error("companyId is required");
+  return companyId;
+}
+
+function requireAgentActor(context: { actor: { type: string; agentId: string | null } }): void {
+  if (context.actor.type !== "agent" || !context.actor.agentId) {
+    throw new Error("This inspection requires an Agent actor");
+  }
+}
+
+function requireHumanActor(context: { actor: { type: string; userId: string | null } }): void {
+  if (context.actor.type !== "user" || !context.actor.userId) {
+    throw new Error("This operation requires a human actor");
+  }
+}
+
+function dispatchDescription(goal: Goal): string {
+  return `Start autonomous delivery for Company Goal ${goal.id}.
+
+Use Paperclip native Issues, child relations, blockers and executionPolicy. Do not create a separate Milestone state machine.
+
+1. Read the Goal and relevant Project state.
+2. Record a concise autonomy envelope: allowed scope, forbidden actions, budget/time bound, verification and risk level.
+3. Create the smallest useful implementation Task tree and assign capable Agents.
+4. Put an independent Agent review stage on code or deliverable Tasks with native executionPolicy.
+5. Add a human approval stage only for destructive, production, external-communication, permission, secret, legal, financial or materially irreversible actions.
+6. Continue automatically through review feedback. Escalate only when the work must leave the approved scope, needs a human-only permission, exceeds its bound or fails the same acceptance criterion twice.
+7. Finish with one concise Goal-level report. Do not require a separate Git Milestone report or Board confirmation for ordinary reversible work.`;
 }
 
 export function createOperationPlugin() {
@@ -271,23 +135,29 @@ export function createOperationPlugin() {
         return isOperationState(value) ? value : normalState();
       };
 
-      const getDeliveryState = async (companyId: string, goalId: string): Promise<DeliveryState | null> => {
-        const value = await ctx.state.get(deliveryStateKey(companyId, goalId));
-        return isDeliveryState(value) ? value : null;
+      const saveState = async (companyId: string, state: OperationState): Promise<void> => {
+        await ctx.state.set(companyStateKey(companyId, STATE_KEY), state);
       };
 
-      const requireNormalOperation = async (companyId: string): Promise<void> => {
-        if ((await getState(companyId)).mode !== "normal") {
-          throw new Error("Delivery workflow changes require normal Company operation");
-        }
+      const getConfig = async () => {
+        const config = await ctx.config.get();
+        const orchestratorRole = typeof config.orchestratorRole === "string"
+          ? config.orchestratorRole.trim()
+          : "";
+        if (!orchestratorRole) throw new Error("operation-control requires config.orchestratorRole");
+        return {
+          orchestratorRole,
+          autoDispatchGoals: config.autoDispatchGoals !== false,
+          maxRunsPerHour: typeof config.maxRunsPerHour === "number"
+            && Number.isInteger(config.maxRunsPerHour)
+            && config.maxRunsPerHour > 0
+            ? config.maxRunsPerHour
+            : 0,
+        };
       };
 
       const getHourlyRunBudget = async (companyId: string) => {
-        const config = await ctx.config.get();
-        const configuredLimit = config.maxRunsPerHour;
-        const limit = typeof configuredLimit === "number" && Number.isInteger(configuredLimit) && configuredLimit > 0
-          ? configuredLimit
-          : 0;
+        const { maxRunsPerHour: limit } = await getConfig();
         const windowStartedAt = currentHourStartedAt();
         const value = await ctx.state.get(companyStateKey(companyId, HOURLY_RUN_BUDGET_KEY));
         const saved = value as Partial<HourlyRunBudget> | null;
@@ -303,458 +173,83 @@ export function createOperationPlugin() {
 
       const recordRunStart = async (companyId: string) => {
         const budget = await getHourlyRunBudget(companyId);
-        const next = { version: 1 as const, windowStartedAt: budget.windowStartedAt, count: budget.count + 1 };
+        const next: HourlyRunBudget = {
+          version: 1,
+          windowStartedAt: budget.windowStartedAt,
+          count: budget.count + 1,
+        };
         await ctx.state.set(companyStateKey(companyId, HOURLY_RUN_BUDGET_KEY), next);
         return { ...next, limit: budget.limit };
       };
 
-      const saveDeliveryState = async (
-        companyId: string,
-        state: DeliveryState,
-      ): Promise<DeliveryState> => {
-        const next = { ...state, changedAt: new Date().toISOString() };
-        await ctx.state.set(deliveryStateKey(companyId, state.goalId), next);
-        if (next.milestoneId) await ctx.state.set(deliveryMilestoneKey(next.milestoneId), next);
-        if (next.rootTaskId) {
-          await ctx.state.set(deliveryNodeKey(next.rootTaskId), {
-            rootTaskId: next.rootTaskId,
-            goalId: next.goalId,
-            milestoneId: next.milestoneId,
-            parentId: null,
-          } satisfies DeliveryNode);
-        }
-        return next;
-      };
-
-      const getIssueNode = async (issueId: string): Promise<DeliveryNode | null> => {
-        const value = await ctx.state.get(deliveryNodeKey(issueId));
-        if (!value || typeof value !== "object") return null;
-        const node = value as Partial<DeliveryNode>;
-        return typeof node.rootTaskId === "string" && typeof node.goalId === "string" && typeof node.milestoneId === "string"
-          ? { rootTaskId: node.rootTaskId, goalId: node.goalId, milestoneId: node.milestoneId, parentId: node.parentId ?? null }
-          : null;
-      };
-
-      const getNodeRejectionCount = async (issueId: string): Promise<number> => {
-        const value = await ctx.state.get(deliveryNodeRejectionCountKey(issueId));
-        return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
-      };
-
-      const getIssueDelivery = async (
-        companyId: string,
-        issue: Issue,
-      ): Promise<{ state: DeliveryState; node: DeliveryNode } | null> => {
-        let current: Issue | null = issue;
-        while (current) {
-          const node = await getIssueNode(current.id);
-          if (node) {
-            const state = await getDeliveryState(companyId, node.goalId);
-            return state ? { state, node } : null;
-          }
-          current = current.parentId ? await ctx.issues.get(current.parentId, companyId) : null;
-        }
-        return null;
-      };
-
-      const directChildren = async (issueId: string, companyId: string): Promise<Issue[]> => {
-        const subtree = await ctx.issues.getSubtree(issueId, companyId, { includeRoot: false });
-        return subtree.issues.filter((item) => item.parentId === issueId);
-      };
-
-      const requireGoal = async (goalId: string, companyId: string): Promise<Goal> => {
-        const goal = await ctx.goals.get(goalId, companyId);
-        if (!goal) throw new Error("Goal not found");
-        return goal;
-      };
-
-      const getOrchestratorRole = async (): Promise<string> => {
-        const config = await ctx.config.get();
-        const role = config.orchestratorRole;
-        if (typeof role !== "string" || !role.trim()) {
-          throw new Error("operation-control requires config.orchestratorRole");
-        }
-        return role.trim();
-      };
-
-      const requireOrchestrator = async (agentId: string, companyId: string): Promise<Agent> => {
-        const orchestratorRole = await getOrchestratorRole();
-        const agent = await ctx.agents.get(agentId, companyId);
-        if (!isInvokable(agent) || agent.role !== orchestratorRole) {
-          throw new Error("Only the configured workflow orchestrator may perform this workflow step");
-        }
-        return agent;
-      };
-
-      const resolveOrchestrator = async (companyId: string, preferredAgentId?: string | null): Promise<Agent> => {
-        if (preferredAgentId) return requireOrchestrator(preferredAgentId, companyId);
-        const role = await getOrchestratorRole();
+      const resolveOrchestrator = async (companyId: string): Promise<Agent> => {
+        const { orchestratorRole } = await getConfig();
         const matches = (await ctx.agents.list({ companyId }))
-          .filter((agent) => isInvokable(agent) && agent.role === role);
-        if (matches.length !== 1) throw new Error("Delivery workflow requires exactly one active orchestrator");
+          .filter((agent) => isInvokable(agent) && agent.role === orchestratorRole);
+        if (matches.length !== 1) {
+          throw new Error("Autonomous Goal dispatch requires exactly one active orchestrator");
+        }
         return matches[0];
       };
 
-      const queueOrchestratorWork = async ({
-        companyId,
-        goalId,
-        preferredAgentId,
-        originId,
-        title,
-        description,
-        actorUserId,
-      }: {
-        companyId: string;
-        goalId: string;
-        preferredAgentId?: string | null;
-        originId: string;
-        title: string;
-        description: string;
-        actorUserId: string;
-      }): Promise<Issue> => {
-        const orchestrator = await resolveOrchestrator(companyId, preferredAgentId);
+      const dispatchGoal = async (companyId: string, goalId: string) => {
+        const operation = await getState(companyId);
+        if (operation.mode !== "normal") return { status: "deferred", goalId };
+        const { autoDispatchGoals } = await getConfig();
+        if (!autoDispatchGoals) return { status: "disabled", goalId };
+
+        const goal = await ctx.goals.get(goalId, companyId);
+        if (!goal || !isOpenCompanyGoal(goal)) return { status: "ignored", goalId };
+
         const existing = await ctx.issues.list({
           companyId,
-          originKind: ORCHESTRATION_ORIGIN,
-          originId,
+          originKind: GOAL_DISPATCH_ORIGIN,
+          originId: goal.id,
           includePluginOperations: true,
           limit: 1,
         });
-        const issue = existing[0] ?? await ctx.issues.create({
-          companyId,
-          goalId,
-          title,
-          description,
-          status: "todo",
-          priority: "high",
-          assigneeAgentId: orchestrator.id,
-          originKind: ORCHESTRATION_ORIGIN,
-          originId,
-          actor: { actorUserId },
-        });
-        if (!isTerminal(issue)) {
-          await ctx.issues.requestWakeup(issue.id, companyId, {
-            reason: title,
-            contextSource: "operation-control:delivery-orchestration",
-            idempotencyKey: `${originId}:wakeup`,
-            actorUserId,
-          });
-        }
-        return issue;
-      };
-
-      const toolExecutionGuide = (toolName: string) =>
-        `Use the registered Operation Control tool ${toolName} directly. If it is not exposed as a native tool, POST to $PAPERCLIP_API_URL/api/plugins/tools/execute with the Bearer $PAPERCLIP_API_KEY and JSON {"tool":"local.operation-control:${toolName}","parameters":{...},"runContext":{"agentId":"$PAPERCLIP_AGENT_ID","runId":"$PAPERCLIP_RUN_ID","companyId":"$PAPERCLIP_COMPANY_ID","projectId":"<related-project-id>"}}. If the current Task has no Project, resolve the related Project once from GET $PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/projects; projectId must not be null. Use the current wake payload and tool schema; do not search server source or past sessions for invocation details.`;
-
-      const repairDeliveryOrchestration = async (companyId: string, actorUserId: string) => {
-        await requireNormalOperation(companyId);
-        const activeGoalId = await ctx.state.get(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY));
-        if (typeof activeGoalId !== "string") throw new Error("No controlled delivery Goal is active");
-        const state = await getDeliveryState(companyId, activeGoalId);
-        if (!state) throw new Error("Controlled delivery state is missing");
-        if (state.phase === "milestone_pending" || state.phase === "awaiting_human_confirmation") {
-          return { status: "human_gate", phase: state.phase };
-        }
-        if (state.phase === "executing") return { status: "active_delivery", phase: state.phase };
-
-        const targetGoalId = state.phase === "milestone_confirmed" ? state.milestoneId : state.goalId;
-        if (!targetGoalId) throw new Error("Delivery state is missing the orchestration Goal");
-        const orchestrationTasks = await ctx.issues.list({
-          companyId,
-          originKind: ORCHESTRATION_ORIGIN,
-          includePluginOperations: true,
-          limit: 100,
-        });
-        const relevant = orchestrationTasks.filter((issue) => issue.goalId === targetGoalId);
-        const pending = relevant.filter((issue) => !isTerminal(issue));
-        if (pending.length > 1) throw new Error("Multiple pending delivery orchestration Tasks require manual resolution");
-        if (pending[0]) {
-          await ctx.issues.requestWakeup(pending[0].id, companyId, {
-            reason: "Repair stalled controlled delivery",
-            contextSource: "operation-control:delivery-repair",
-            idempotencyKey: `${pending[0].id}:repair:${state.changedAt}`,
-            actorUserId,
-          });
-          return { status: "woken", phase: state.phase, issueId: pending[0].id };
-        }
-
-        const next = state.phase === "milestone_confirmed"
-          ? {
-              title: "Recover confirmed Milestone Root Task creation",
-              description: `Milestone ${state.milestoneId} is confirmed. Call create-root-task, then mark this recovery Task done.\n\n${toolExecutionGuide("create-root-task")}`,
-            }
-          : {
-              title: state.phase === "completed" ? "Recover next Milestone planning" : "Recover Milestone proposal",
-              description: `Review remaining Company Goal ${state.goalId} scope and call propose-milestone, then mark this recovery Task done.\n\n${toolExecutionGuide("propose-milestone")}`,
-            };
-        const recoveryOrigin = `${state.goalId}:repair:${state.phase}:${state.changedAt}`;
-        const recoveryAttempt = relevant.filter((issue) => issue.originId?.startsWith(recoveryOrigin)).length;
-        const issue = await queueOrchestratorWork({
-          companyId,
-          goalId: targetGoalId,
-          preferredAgentId: state.orchestratorAgentId,
-          originId: recoveryAttempt ? `${recoveryOrigin}:${recoveryAttempt + 1}` : recoveryOrigin,
-          ...next,
-          actorUserId,
-        });
-        return { status: "created", phase: state.phase, issueId: issue.id };
-      };
-
-      const reconcileBlockedDeliveryTriage = async (
-        companyId: string,
-        issue: Issue,
-        tracked: { state: DeliveryState; node: DeliveryNode },
-        allowCreate: boolean,
-      ): Promise<Issue | null> => {
-        const markerKey = deliveryBlockerTriageKey(issue.id);
-        const savedValue = await ctx.state.get(markerKey);
-        const saved = isBlockerTriageMarker(savedValue)
-          ? savedValue
-          : { version: 1 as const, active: false, episode: 0 };
-
-        if (issue.status !== "blocked") {
-          if (saved.active) await ctx.state.set(markerKey, { ...saved, active: false });
-          return null;
-        }
-        if (!allowCreate || saved.active || tracked.state.phase !== "executing") return null;
-
-        const relations = await ctx.issues.relations.get(issue.id, companyId);
-        if (relations.blockedBy.some((blocker) => !isTerminal(blocker))) return null;
-
-        const orchestrator = await resolveOrchestrator(companyId, tracked.state.orchestratorAgentId);
-        const episode = saved.episode + 1;
-        const originId = `${issue.id}:episode:${episode}`;
-        const existing = await ctx.issues.list({
-          companyId,
-          originKind: BLOCKER_TRIAGE_ORIGIN,
-          originId,
-          includePluginOperations: true,
-          limit: 1,
-        });
-        const triage = existing[0] ?? await ctx.issues.create({
-          companyId,
-          goalId: tracked.state.goalId,
-          title: `Triage blocked delivery Task ${issue.identifier}`,
-          description: `Delivery Task ${issue.identifier} is blocked without an unfinished Task dependency. Keep the confirmed Milestone and active Task tree unchanged. Read the blocker evidence and distinguish an Agent-actionable failure from a human, actor, permission, scope or Exit-gate decision. Do not modify the product workspace, remove or replace authentication, invoke Board-only actions, promote Backlog, or mark the blocked Task todo. If the blocker is solvable inside the confirmed scope and current Agent actor, record a safe resume recommendation. Otherwise create or update one deduplicated Backlog Candidate outside the active tree and request the exact Board evidence or decision required. Read-only System Improvement Review or Backlog Sweep may continue while the delivery Task remains blocked. Record the result on this triage Task and mark only this Task done.`,
-          status: "todo",
-          priority: "high",
-          assigneeAgentId: orchestrator.id,
-          originKind: BLOCKER_TRIAGE_ORIGIN,
-          originId,
-        });
-        await ctx.state.set(markerKey, { version: 1, active: true, episode });
-        await ctx.issues.requestWakeup(triage.id, companyId, {
-          reason: `Triage blocked delivery Task ${issue.identifier}`,
-          contextSource: "operation-control:delivery-blocker-triage",
-          idempotencyKey: `${originId}:wakeup`,
-        });
-        await ctx.issues.createComment(
-          issue.id,
-          `Workflow fallback: ${triage.identifier}에서 active tree와 확인된 Milestone을 바꾸지 않고 blocker를 분류합니다. 이 Task는 Board evidence 또는 안전한 Agent 경로가 확인될 때까지 blocked 상태를 유지합니다.`,
-          companyId,
-        );
-        return triage;
-      };
-
-      const createChildTask = async (
-        companyId: string,
-        actorId: string,
-        actorRunId: string | null,
-        params: Record<string, unknown>,
-      ) => {
-        await requireNormalOperation(companyId);
-        const parent = await ctx.issues.get(stringParam(params, "parentIssueId"), companyId);
-        if (!parent) throw new Error("Parent Task not found");
-        const tracked = await getIssueDelivery(companyId, parent);
-        if (!tracked || tracked.state.phase === "completed") throw new Error("Parent is not in an active delivery workflow");
-        if (parent.assigneeAgentId !== actorId) throw new Error("Only the parent Task owner may decompose it");
-        if (parent.status === "backlog") throw new Error("Backlog Task must be promoted to todo before decomposition");
-        if (parent.status === "done" || parent.status === "cancelled") throw new Error("A terminal parent cannot receive child Tasks");
-
-        const assigneeAgentId = stringParam(params, "assigneeAgentId");
-        if (assigneeAgentId === actorId) throw new Error("A parent owner cannot review its own child Task");
-        const assignee = await ctx.agents.get(assigneeAgentId, companyId);
-        if (!isInvokable(assignee)) throw new Error("Child assignee must be active and invokable");
-
-        const blockedByIssueIds = Array.isArray(params.blockedByIssueIds)
-          ? params.blockedByIssueIds.filter((value): value is string => typeof value === "string")
-          : [];
-        for (const blockerId of blockedByIssueIds) {
-          const blocker = await ctx.issues.get(blockerId, companyId);
-          if (!blocker || blocker.parentId !== parent.id) throw new Error("Sibling blockers must share the same parent");
-        }
-
-        const child = await ctx.issues.create({
-          companyId,
-          parentId: parent.id,
-          goalId: parent.goalId ?? undefined,
-          inheritExecutionWorkspaceFromIssueId: parent.id,
-          title: stringParam(params, "title"),
-          description: typeof params.description === "string" ? params.description : undefined,
-          status: "todo",
-          priority: parent.priority,
-          assigneeAgentId,
-          blockedByIssueIds,
-          originKind: "plugin:local.operation-control:delivery-child",
-          originId: `${parent.id}:${Date.now()}`,
-          actor: { actorAgentId: actorId, actorRunId },
-        });
-        await ctx.state.set(deliveryNodeKey(child.id), {
-          rootTaskId: tracked.node.rootTaskId,
-          goalId: tracked.state.goalId,
-          milestoneId: tracked.node.milestoneId,
-          parentId: parent.id,
-        } satisfies DeliveryNode);
-        if (parent.status === "todo") {
-          await ctx.issues.update(parent.id, { status: "in_progress" }, companyId, { actorAgentId: actorId, actorRunId });
-        }
-        return child;
-      };
-
-      const reviewNode = async (
-        companyId: string,
-        actorId: string,
-        actorRunId: string | null,
-        params: Record<string, unknown>,
-      ) => {
-        await requireNormalOperation(companyId);
-        const issue = await ctx.issues.get(stringParam(params, "issueId"), companyId);
-        if (!issue) throw new Error("Node Task not found");
-        const tracked = await getIssueDelivery(companyId, issue);
-        if (!tracked || tracked.state.phase === "completed") throw new Error("Task is not in an active delivery workflow");
-        if (issue.assigneeAgentId !== actorId) throw new Error("Only the Node owner may review its children");
-
-        const children = await directChildren(issue.id, companyId);
-        if (!children.length) throw new Error("A Node Task must have at least one child");
-        if (children.some((child) => !isTerminal(child))) throw new Error("All child Tasks must be terminal before review");
-        if (children.some((child) => child.assigneeAgentId === actorId)) {
-          throw new Error("The Node owner cannot review a child it executed");
-        }
-
-        const decision = params.decision;
-        if (decision !== "approved" && decision !== "rejected") throw new Error("decision must be approved or rejected");
-        if (decision === "rejected") {
-          const reason = stringParam(params, "reason");
-          const nodeRejectionCount = await getNodeRejectionCount(issue.id);
-          if (nodeRejectionCount >= 1) {
-            if (nodeRejectionCount === 1) {
-              await ctx.state.set(deliveryNodeRejectionCountKey(issue.id), 2);
-              await ctx.issues.createComment(
-                issue.id,
-                "Workflow guard: this Node was rejected twice. Automatic remediation is stopped until the Board resolves the design or scope decision.",
-                companyId,
-                { authorAgentId: actorId },
-              );
-            }
-            // ponytail: This is intentionally Node-wide until Paperclip exposes structured acceptance-criterion IDs.
-            throw new Error("This Node was rejected twice; stop automatic remediation and request a Board design or scope decision");
+        if (existing[0]) {
+          if (isTerminal(existing[0].status)) {
+            return { status: "completed", goalId, issueId: existing[0].id };
           }
-          const remediation = await ctx.issues.create({
-            companyId,
-            parentId: issue.id,
-            goalId: issue.goalId ?? undefined,
-            inheritExecutionWorkspaceFromIssueId: issue.id,
-            title: `Remediation: ${reason.slice(0, 80)}`,
-            description: `## Rejection reason\n\n${reason}`,
-            status: "todo",
-            priority: issue.priority,
-            assigneeAgentId: stringParam(params, "assigneeAgentId"),
-            originKind: "plugin:local.operation-control:delivery-remediation",
-            originId: `${issue.id}:rejection:${tracked.state.rejectionCount + 1}`,
-            actor: { actorAgentId: actorId, actorRunId },
+          await ctx.issues.requestWakeup(existing[0].id, companyId, {
+            reason: "Company Goal dispatch is ready for autonomous decomposition and delivery.",
+            contextSource: "operation-control:goal-dispatch",
+            idempotencyKey: `${goal.id}:autonomous-goal-dispatch`,
           });
-          await ctx.state.set(deliveryNodeKey(remediation.id), {
-            rootTaskId: tracked.node.rootTaskId,
-            goalId: tracked.state.goalId,
-            milestoneId: tracked.node.milestoneId,
-            parentId: issue.id,
-          } satisfies DeliveryNode);
-          await ctx.state.set(deliveryNodeRejectionCountKey(issue.id), nodeRejectionCount + 1);
-          await ctx.issues.update(issue.id, { status: "in_progress" }, companyId, { actorAgentId: actorId, actorRunId });
-          await saveDeliveryState(companyId, {
-            ...tracked.state,
-            phase: "executing",
-            rejectionCount: tracked.state.rejectionCount + 1,
-          });
-          return { decision, remediationIssueId: remediation.id };
+          return { status: "existing", goalId, issueId: existing[0].id };
         }
 
-        if (issue.id === tracked.state.rootTaskId) {
-          const orchestrator = await resolveOrchestrator(companyId, tracked.state.orchestratorAgentId);
-          await ctx.issues.update(
-            issue.id,
-            { status: "in_review", assigneeAgentId: orchestrator.id },
-            companyId,
-            { actorAgentId: actorId, actorRunId },
-          );
-          await saveDeliveryState(companyId, {
-            ...tracked.state,
-            orchestratorAgentId: orchestrator.id,
-            phase: "executing",
-          });
-          await ctx.issues.requestWakeup(issue.id, companyId, {
-            reason: "Root review completed; verify the Git milestone report and request Board confirmation.",
-            contextSource: "operation-control:milestone-report",
-            idempotencyKey: `${issue.id}:milestone-report:${tracked.state.rejectionCount}`,
-            actorAgentId: actorId,
-            actorRunId,
-          });
-          return { decision, issueId: issue.id, phase: "executing", next: "milestone_report" };
-        }
-        await ctx.issues.update(issue.id, { status: "done" }, companyId, { actorAgentId: actorId, actorRunId });
-        return { decision, issueId: issue.id, phase: "executing" };
-      };
-
-      const ensureArtifactIssue = async (companyId: string): Promise<string> => {
-        const saved = await ctx.state.get(companyStateKey(companyId, ARTIFACT_ISSUE_KEY));
-        if (typeof saved === "string" && await ctx.issues.get(saved, companyId)) return saved;
-
-        const existing = await ctx.issues.list({
+        const orchestrator = await resolveOrchestrator(companyId);
+        const issue = await ctx.issues.create({
           companyId,
-          originKind: ARTIFACT_ORIGIN,
-          originId: STATE_KEY,
-          includePluginOperations: true,
-          limit: 1,
-        });
-        const issue = existing[0] ?? await ctx.issues.create({
-          companyId,
-          title: "Company Operation State",
-          description: "Canonical operational state used to coordinate maintenance windows.",
-          status: "backlog",
+          goalId: goal.id,
+          title: `Deliver Goal autonomously: ${goal.title}`,
+          description: dispatchDescription(goal),
+          status: "todo",
           priority: "high",
-          surfaceVisibility: "default",
-          originKind: ARTIFACT_ORIGIN,
-          originId: STATE_KEY,
+          assigneeAgentId: orchestrator.id,
+          originKind: GOAL_DISPATCH_ORIGIN,
+          originId: goal.id,
         });
-        await ctx.state.set(companyStateKey(companyId, ARTIFACT_ISSUE_KEY), issue.id);
-        return issue.id;
+        await ctx.issues.requestWakeup(issue.id, companyId, {
+          reason: "New Company Goal is ready for autonomous decomposition and delivery.",
+          contextSource: "operation-control:goal-dispatch",
+          idempotencyKey: `${goal.id}:autonomous-goal-dispatch`,
+        });
+        return { status: "created", goalId, issueId: issue.id, orchestratorAgentId: orchestrator.id };
       };
 
-      const saveState = async (companyId: string, state: OperationState): Promise<void> => {
-        await ctx.state.set(companyStateKey(companyId, STATE_KEY), state);
-        try {
-          const issueId = await ensureArtifactIssue(companyId);
-          await ctx.issues.documents.upsert({
-            companyId,
-            issueId,
-            key: STATE_KEY,
-            title: "Company Operation State",
-            format: "markdown",
-            body: artifactBody(state),
-            changeSummary: `Operation mode changed to ${state.mode}`,
-          });
-        } catch (error) {
-          ctx.logger.warn("Operation state saved, but Artifact synchronization failed", {
-            companyId,
-            error: String(error),
-          });
+      const dispatchOpenGoals = async (companyId: string) => {
+        const goals = await ctx.goals.list({ companyId, level: "company", limit: 100 });
+        const results = [];
+        for (const goal of goals.filter(isOpenCompanyGoal)) {
+          results.push(await dispatchGoal(companyId, goal.id));
         }
+        return results;
       };
 
-      const pauseAgent = async (
-        companyId: string,
-        agentId: string,
-        cancelRunning: boolean,
-      ): Promise<boolean> => {
+      const pauseAgent = async (companyId: string, agentId: string, cancelRunning: boolean): Promise<boolean> => {
         const agent = await ctx.agents.get(agentId, companyId);
         if (!agent || agent.status === "paused" || agent.status === "terminated") return false;
         if (agent.status === "running" && !cancelRunning) return false;
@@ -771,13 +266,8 @@ export function createOperationPlugin() {
         }
       };
 
-      const reconcile = async (
-        companyId: string,
-        state: OperationState,
-        cancelExistingRuns: boolean,
-      ): Promise<OperationState> => {
+      const reconcile = async (companyId: string, state: OperationState, cancelExistingRuns: boolean) => {
         if (state.mode === "normal") return state;
-
         const agents = await ctx.agents.list({ companyId });
         for (const agent of agents) {
           if (agent.id === state.ownerAgentId) continue;
@@ -789,7 +279,11 @@ export function createOperationPlugin() {
           (agent) => agent.id !== state.ownerAgentId && agent.status === "running",
         );
         if (state.mode === "holding" && !stillRunning) {
-          const maintenance = { ...state, mode: "maintenance" as const, changedAt: new Date().toISOString() };
+          const maintenance: OperationState = {
+            ...state,
+            mode: "maintenance",
+            changedAt: new Date().toISOString(),
+          };
           await saveState(companyId, maintenance);
           return maintenance;
         }
@@ -804,7 +298,6 @@ export function createOperationPlugin() {
       ) => {
         const owner = await ctx.agents.get(ownerAgentId, companyId);
         if (!owner || owner.status === "terminated") throw new Error("Select an active maintenance owner");
-
         const requestedAt = new Date().toISOString();
         const state: OperationState = {
           version: 1,
@@ -828,14 +321,13 @@ export function createOperationPlugin() {
           changedAt: new Date().toISOString(),
         };
         await saveState(companyId, state);
+
         const budget = await getHourlyRunBudget(companyId);
-        if (budget.limit > 0) {
-          await ctx.state.set(companyStateKey(companyId, HOURLY_RUN_BUDGET_KEY), {
-            version: 1,
-            windowStartedAt: budget.windowStartedAt,
-            count: 0,
-          } satisfies HourlyRunBudget);
-        }
+        await ctx.state.set(companyStateKey(companyId, HOURLY_RUN_BUDGET_KEY), {
+          version: 1,
+          windowStartedAt: budget.windowStartedAt,
+          count: 0,
+        } satisfies HourlyRunBudget);
 
         const agents = await ctx.agents.list({ companyId });
         for (const agent of agents) {
@@ -844,7 +336,33 @@ export function createOperationPlugin() {
           if (agent.status === "paused") await ctx.agents.resume(agent.id, companyId);
           await ctx.state.delete(marker);
         }
+        await dispatchOpenGoals(companyId);
         return state;
+      };
+
+      const operationData = async (companyId: string) => {
+        const [state, runBudget, agents, config] = await Promise.all([
+          getState(companyId),
+          getHourlyRunBudget(companyId),
+          ctx.agents.list({ companyId }),
+          getConfig(),
+        ]);
+        return {
+          state,
+          runBudget,
+          agents: agents.map(({ id, name, title, role, status }: Agent) => ({ id, name, title, role, status })),
+          autonomy: {
+            autoDispatchGoals: config.autoDispatchGoals,
+            orchestratorRole: config.orchestratorRole,
+            deliveryControl: "paperclip-native",
+          },
+        };
+      };
+
+      const handleGoal = async (event: PluginEvent) => {
+        const goalId = readGoalId(event);
+        if (!goalId) return;
+        await dispatchGoal(event.companyId, goalId);
       };
 
       const handleStarted = async (event: PluginEvent) => {
@@ -869,10 +387,9 @@ export function createOperationPlugin() {
           }
           return;
         }
+
         const state = await getState(event.companyId);
         if (state.mode === "normal" || agentId === state.ownerAgentId) return;
-
-        // This run started after the hold flag, so it is not part of the drain set.
         await pauseAgent(event.companyId, agentId, true);
         await reconcile(event.companyId, state, false);
       };
@@ -882,609 +399,44 @@ export function createOperationPlugin() {
         if (!agentId) return;
         const state = await getState(event.companyId);
         if (state.mode === "normal" || agentId === state.ownerAgentId) return;
-
         await pauseAgent(event.companyId, agentId, false);
         await reconcile(event.companyId, state, false);
       };
 
-      const registerGoal = async (companyId: string, userId: string, params: Record<string, unknown>) => {
-        await requireNormalOperation(companyId);
-        const activeGoalId = await ctx.state.get(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY));
-        if (typeof activeGoalId === "string") {
-          const active = await getDeliveryState(companyId, activeGoalId);
-          if (active && active.phase !== "completed") {
-            throw new Error("Another company Goal already has an active delivery workflow");
-          }
-        }
-        const goal = await ctx.goals.create({
-          companyId,
-          title: stringParam(params, "title"),
-          description: typeof params.description === "string" ? params.description : undefined,
-          level: "company",
-          status: "active",
-        });
-        await saveDeliveryState(companyId, freshDeliveryState(goal.id));
-        await ctx.state.set(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY), goal.id);
-        await queueOrchestratorWork({
-          companyId,
-          goalId: goal.id,
-          originId: `${goal.id}:draft-milestone`,
-          title: "Draft the first controlled Milestone",
-          description: `Review Company Goal ${goal.id}, separate required scope from optional Backlog, then call propose-milestone with a complete human-reviewable description. Mark this orchestration Task done after the proposal is submitted.\n\n${toolExecutionGuide("propose-milestone")}`,
-          actorUserId: userId,
-        });
-        ctx.logger.info("Delivery Goal registered", { companyId, goalId: goal.id, userId });
-        return goal;
-      };
-
-      const adoptGoal = async (companyId: string, userId: string, params: Record<string, unknown>) => {
-        await requireNormalOperation(companyId);
-        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
-        if (goal.level !== "company") throw new Error("Only a company Goal can enter delivery-control");
-        if (goal.status !== "active" && goal.status !== "planned") {
-          throw new Error("Only an active or planned company Goal can enter delivery-control");
-        }
-
-        const activeGoalId = await ctx.state.get(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY));
-        if (typeof activeGoalId === "string" && activeGoalId !== goal.id) {
-          const active = await getDeliveryState(companyId, activeGoalId);
-          if (active && active.phase !== "completed") {
-            throw new Error("Another company Goal already has an active delivery workflow");
-          }
-        }
-
-        const state = await getDeliveryState(companyId, goal.id) ?? freshDeliveryState(goal.id);
-        await saveDeliveryState(companyId, state);
-        await ctx.state.set(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY), goal.id);
-        await queueOrchestratorWork({
-          companyId,
-          goalId: goal.id,
-          preferredAgentId: state.orchestratorAgentId,
-          originId: `${goal.id}:draft-milestone`,
-          title: "Draft the next controlled Milestone",
-          description: `Review Company Goal ${goal.id}, separate required scope from optional Backlog, then call propose-milestone with a complete human-reviewable description. Mark this orchestration Task done after the proposal is submitted.\n\n${toolExecutionGuide("propose-milestone")}`,
-          actorUserId: userId,
-        });
-        ctx.logger.info("Existing Goal adopted into delivery-control", { companyId, goalId: goal.id, userId });
-        return { goal, state };
-      };
-
-      const proposeMilestone = async (companyId: string, agentId: string, params: Record<string, unknown>) => {
-        await requireNormalOperation(companyId);
-        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
-        if (goal.level !== "company") throw new Error("Milestones must be based on a company Goal");
-        await requireOrchestrator(agentId, companyId);
-        const current = await getDeliveryState(companyId, goal.id);
-        if (!current) throw new Error("Register the Goal through delivery-control first");
-        if (current.milestoneId && current.phase !== "completed") {
-          throw new Error("This Goal already has a Milestone in progress");
-        }
-        const next = current.phase === "completed" ? freshDeliveryState(goal.id) : current;
-
-        const milestone = await ctx.goals.create({
-          companyId,
-          title: stringParam(params, "title"),
-          description: stringParam(params, "description"),
-          level: "team",
-          status: "planned",
-          parentId: goal.id,
-          ownerAgentId: agentId,
-        });
-        await saveDeliveryState(companyId, {
-          ...next,
-          milestoneId: milestone.id,
-          orchestratorAgentId: agentId,
-          phase: "milestone_pending",
-        });
-        return milestone;
-      };
-
-      const confirmMilestone = async (companyId: string, userId: string, params: Record<string, unknown>) => {
-        await requireNormalOperation(companyId);
-        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
-        const state = await getDeliveryState(companyId, goal.id);
-        if (!state?.milestoneId || state.phase !== "milestone_pending") throw new Error("No Milestone is awaiting human confirmation");
-        const milestone = await requireGoal(state.milestoneId, companyId);
-        const decision = params.decision ?? "accepted";
-        if (decision === "rejected") {
-          const reason = stringParam(params, "reason");
-          const rejected = await ctx.goals.update(milestone.id, { status: "cancelled" }, companyId);
-          await saveDeliveryState(companyId, freshDeliveryState(goal.id));
-          await queueOrchestratorWork({
-            companyId,
-            goalId: goal.id,
-            preferredAgentId: state.orchestratorAgentId,
-            originId: `${milestone.id}:revise-milestone`,
-            title: "Revise the rejected Milestone proposal",
-            description: `The Board rejected Milestone ${milestone.id}.\n\n## Feedback\n\n${reason}\n\n## Previous proposal\n\n${milestone.description ?? "No previous description was recorded."}\n\nRevise only what the feedback requires, propose the replacement under Company Goal ${goal.id}, then mark this orchestration Task done.\n\n${toolExecutionGuide("propose-milestone")}`,
-            actorUserId: userId,
-          });
-          return { decision, milestone: rejected, phase: "goal_registered" };
-        }
-        if (decision !== "accepted") throw new Error("decision must be accepted or rejected");
-        const confirmed = await ctx.goals.update(milestone.id, { status: "active" }, companyId);
-        await saveDeliveryState(companyId, { ...state, phase: "milestone_confirmed" });
-        await queueOrchestratorWork({
-          companyId,
-          goalId: milestone.id,
-          preferredAgentId: state.orchestratorAgentId,
-          originId: `${milestone.id}:create-root-task`,
-          title: "Create the confirmed Milestone Root Task",
-          description: `Milestone ${milestone.id} is Board-confirmed. Call create-root-task with the required Project, execution owner, Delivery Contract and Git report exit gate, then mark this orchestration Task done.\n\n${toolExecutionGuide("create-root-task")}`,
-          actorUserId: userId,
-        });
-        ctx.logger.info("Milestone confirmed by human", { companyId, goalId: goal.id, milestoneId: milestone.id, userId });
-        return confirmed;
-      };
-
-      const createRootTask = async (companyId: string, agentId: string, runId: string | null, params: Record<string, unknown>) => {
-        await requireNormalOperation(companyId);
-        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
-        const orchestrator = await requireOrchestrator(agentId, companyId);
-        const state = await getDeliveryState(companyId, goal.id);
-        if (!state?.milestoneId || state.phase !== "milestone_confirmed") throw new Error("Milestone must be human-confirmed before Root Task creation");
-        const assigneeAgentId = stringParam(params, "assigneeAgentId");
-        const assignee = await ctx.agents.get(assigneeAgentId, companyId);
-        if (!isInvokable(assignee) || assignee.role === orchestrator.role) throw new Error("Root Task must be assigned to an active execution Agent");
-        const root = await ctx.issues.create({
-          companyId,
-          projectId: typeof params.projectId === "string" ? params.projectId : undefined,
-          goalId: state.milestoneId,
-          title: stringParam(params, "title"),
-          description: typeof params.description === "string" ? params.description : undefined,
-          status: "todo",
-          priority: "high",
-          assigneeAgentId,
-          originKind: "plugin:local.operation-control:delivery-root",
-          originId: `${state.milestoneId}:root`,
-          actor: { actorAgentId: agentId, actorRunId: runId },
-        });
-        await ctx.state.set(deliveryNodeKey(root.id), {
-          rootTaskId: root.id,
-          goalId: goal.id,
-          milestoneId: state.milestoneId,
-          parentId: null,
-        } satisfies DeliveryNode);
-        await saveDeliveryState(companyId, {
-          ...state,
-          rootTaskId: root.id,
-          orchestratorAgentId: agentId,
-          rootOwnerAgentId: assigneeAgentId,
-          report: null,
-          phase: "executing",
-        });
-        return root;
-      };
-
-      const requestMilestoneReview = async (
-        companyId: string,
-        agentId: string,
-        params: Record<string, unknown>,
-      ) => {
-        await requireNormalOperation(companyId);
-        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
-        await requireOrchestrator(agentId, companyId);
-        const state = await getDeliveryState(companyId, goal.id);
-        if (!state?.milestoneId || !state.rootTaskId) throw new Error("Milestone delivery is not ready for reporting");
-        const reportPath = stringParam(params, "reportPath");
-        const expectedPath = `docs/milestones/${state.milestoneId}.md`;
-        if (reportPath !== expectedPath) throw new Error(`reportPath must be ${expectedPath}`);
-        const commitSha = reportCommitParam(params);
-        const summary = stringParam(params, "summary");
-        if (summary.length > 1000) throw new Error("summary must be 1000 characters or fewer");
-        const evidence = typeof params.evidence === "string" ? params.evidence.trim() : "";
-        if (evidence.length > 18000) throw new Error("evidence must be 18000 characters or fewer");
-
-        if (state.phase === "awaiting_human_confirmation" && state.report) {
-          if (state.report.path !== reportPath || state.report.commitSha !== commitSha || state.report.summary !== summary) {
-            throw new Error("A different Milestone report is already awaiting confirmation");
-          }
-          return { report: state.report, phase: state.phase };
-        }
-        if (state.phase !== "executing") throw new Error("Milestone is not ready for a completion report");
-        const root = await ctx.issues.get(state.rootTaskId, companyId);
-        if (!root || root.status !== "in_review" || root.assigneeAgentId !== agentId) {
-          throw new Error("Root Task must be in review with the workflow orchestrator");
-        }
-        const workspace = root.executionWorkspaceId
-          ? await ctx.executionWorkspaces.get(root.executionWorkspaceId, companyId)
-          : await ctx.projects.getWorkspaceForIssue(root.id, companyId);
-        const cwd = workspace && "cwd" in workspace ? workspace.cwd ?? workspace.path : workspace?.path;
-        if (!cwd) throw new Error("Root Task requires a local Paperclip Git workspace");
-        requireGit(cwd, ["rev-parse", "--is-inside-work-tree"], "Root Task workspace is not a Git repository");
-        requireGit(cwd, ["cat-file", "-e", `${commitSha}^{commit}`], "commitSha does not exist in the Root Task workspace");
-        requireGit(cwd, ["merge-base", "--is-ancestor", commitSha, "HEAD"], "commitSha is not reachable from the Root Task workspace HEAD");
-        requireGit(cwd, ["cat-file", "-e", `${commitSha}:${reportPath}`], "Git commit does not contain the Milestone report");
-        const detailsMarkdown = [
-          "## Board confirmation required",
-          "",
-          "An authenticated human must accept or reject this report in the Operation Control dashboard widget.",
-          "Agent calls cannot complete the Milestone.",
-          "",
-          `- Report: \`${reportPath}\``,
-          `- Git commit: \`${commitSha}\``,
-          `- Summary: ${summary}`,
-          evidence ? `\n## Evidence\n\n${evidence}` : "",
-        ].filter(Boolean).join("\n");
-        await ctx.issues.createComment(root.id, detailsMarkdown, companyId, { authorAgentId: agentId });
-        const report: MilestoneReport = { path: reportPath, commitSha, summary, evidence };
-        await saveDeliveryState(companyId, { ...state, report, phase: "awaiting_human_confirmation" });
-        return { report, phase: "awaiting_human_confirmation" };
-      };
-
-      const recordMilestoneConfirmation = async (
-        companyId: string,
-        userId: string,
-        params: Record<string, unknown>,
-      ) => {
-        await requireNormalOperation(companyId);
-        const goal = await requireGoal(stringParam(params, "goalId"), companyId);
-        const state = await getDeliveryState(companyId, goal.id);
-        if (!state?.milestoneId || !state.rootTaskId || state.phase !== "awaiting_human_confirmation" || !state.report) {
-          throw new Error("Milestone is not awaiting direct Board confirmation");
-        }
-        const root = await ctx.issues.get(state.rootTaskId, companyId);
-        if (!root || root.status !== "in_review" || root.assigneeAgentId !== state.orchestratorAgentId) {
-          throw new Error("Root Task must still be assigned to the workflow orchestrator");
-        }
-        const decision = params.decision;
-        if (decision !== "accepted" && decision !== "rejected") throw new Error("decision must be accepted or rejected");
-
-        if (decision === "accepted") {
-          await ctx.issues.update(root.id, { status: "done" }, companyId, { actorUserId: userId });
-          const milestone = await ctx.goals.update(state.milestoneId, { status: "achieved" }, companyId);
-          await saveDeliveryState(companyId, { ...state, phase: "completed" });
-          await queueOrchestratorWork({
-            companyId,
-            goalId: goal.id,
-            preferredAgentId: state.orchestratorAgentId,
-            originId: `${state.milestoneId}:plan-next-milestone`,
-            title: "Plan the next controlled Milestone",
-            description: `Milestone ${state.milestoneId} was accepted. Review remaining Goal scope and Backlog, then either propose the next Milestone or report that Company Goal ${goal.id} is ready for human completion. Mark this orchestration Task done after recording the outcome.\n\n${toolExecutionGuide("propose-milestone")}`,
-            actorUserId: userId,
-          });
-          ctx.logger.info("Milestone completed by direct Board confirmation", {
-            companyId,
-            goalId: goal.id,
-            milestoneId: state.milestoneId,
-            userId,
-          });
-          return { decision, milestone };
-        }
-
-        const reason = stringParam(params, "reason");
-        const assigneeAgentId = stringParam(params, "assigneeAgentId");
-        const rootOwnerAgentId = state.rootOwnerAgentId;
-        if (!rootOwnerAgentId) throw new Error("Original Root Task owner is unavailable");
-        if (assigneeAgentId === rootOwnerAgentId || assigneeAgentId === state.orchestratorAgentId) {
-          throw new Error("Milestone remediation must have an independent executor");
-        }
-        const assignee = await ctx.agents.get(assigneeAgentId, companyId);
-        if (!isInvokable(assignee)) throw new Error("Remediation assignee must be active and invokable");
-        const remediation = await ctx.issues.create({
-          companyId,
-          parentId: root.id,
-          goalId: state.milestoneId,
-          inheritExecutionWorkspaceFromIssueId: root.id,
-          title: `Milestone remediation: ${reason.slice(0, 80)}`,
-          description: `## Human rejection\n\n${reason}\n\n- Rejected report: \`${state.report.path}\`\n- Git commit: \`${state.report.commitSha}\``,
-          status: "todo",
-          priority: root.priority,
-          assigneeAgentId,
-          originKind: "plugin:local.operation-control:delivery-remediation",
-          originId: `${root.id}:human-rejection:${state.rejectionCount + 1}`,
-          actor: { actorUserId: userId },
-        });
-        await ctx.state.set(deliveryNodeKey(remediation.id), {
-          rootTaskId: root.id,
-          goalId: goal.id,
-          milestoneId: state.milestoneId,
-          parentId: root.id,
-        } satisfies DeliveryNode);
-        await ctx.issues.update(
-          root.id,
-          { status: "in_progress", assigneeAgentId: rootOwnerAgentId },
-          companyId,
-          { actorUserId: userId },
-        );
-        await saveDeliveryState(companyId, {
-          ...state,
-          report: null,
-          phase: "executing",
-          rejectionCount: state.rejectionCount + 1,
-        });
-        await ctx.issues.requestWakeup(remediation.id, companyId, {
-          reason: "Board requested Milestone remediation.",
-          contextSource: "operation-control:milestone-rejection",
-          idempotencyKey: `${remediation.id}:milestone-rejection`,
-          actorUserId: userId,
-        });
-        return { decision, remediationIssueId: remediation.id, phase: "executing" };
-      };
-
-      const deliveryData = async (params: Record<string, unknown>) => {
-        const companyId = readCompanyId(params);
-        const goalId = stringParam(params, "goalId");
-        const state = await getDeliveryState(companyId, goalId);
-        const milestone = state?.milestoneId ? await ctx.goals.get(state.milestoneId, companyId) : null;
-        const root = state?.rootTaskId ? await ctx.issues.get(state.rootTaskId, companyId) : null;
-        const goal = await ctx.goals.get(goalId, companyId);
-        return { state, goal, milestone, root };
-      };
-
-      const handleIssueCreated = async (event: PluginEvent) => {
-        const issueId = event.entityId ?? ((event.payload as Record<string, unknown> | null)?.issueId as string | undefined);
-        if (!issueId) return;
-        const issue = await ctx.issues.get(issueId, event.companyId);
-        if (!issue || !issue.parentId) return;
-        const tracked = await getIssueDelivery(event.companyId, issue);
-        if (!tracked || event.actorType === "plugin") return;
-        await ctx.issues.update(issue.id, { status: "cancelled" }, event.companyId);
-        await ctx.issues.createComment(issue.id, "Workflow guard: child Task는 delivery-control plugin을 통해서만 생성할 수 있습니다.", event.companyId);
-        ctx.logger.warn("Cancelled an out-of-band child Task", { companyId: event.companyId, issueId });
-      };
-
-      const handleIssueUpdated = async (event: PluginEvent) => {
-        const issueId = event.entityId ?? ((event.payload as Record<string, unknown> | null)?.issueId as string | undefined);
-        if (!issueId) return;
-        const issue = await ctx.issues.get(issueId, event.companyId);
-        if (!issue) return;
-        const tracked = await getIssueDelivery(event.companyId, issue);
-        if (!tracked || tracked.state.phase === "completed") return;
-        await reconcileBlockedDeliveryTriage(event.companyId, issue, tracked, event.actorType !== "plugin");
-        if (event.actorType === "plugin" || issue.status !== "done") return;
-        if (!(await directChildren(issue.id, event.companyId)).length) return;
-        await ctx.issues.update(issue.id, { status: "in_review" }, event.companyId);
-        await ctx.issues.createComment(issue.id, "Workflow guard: child가 있는 Node/Root Task는 parent owner review를 거쳐야 완료됩니다.", event.companyId);
-        ctx.logger.warn("Reopened an out-of-band parent completion", { companyId: event.companyId, issueId });
-      };
-
-      const handleGoalUpdated = async (event: PluginEvent) => {
-        const goalId = event.entityId ?? ((event.payload as Record<string, unknown> | null)?.goalId as string | undefined);
-        if (!goalId || event.actorType === "plugin") return;
-        const marker = await ctx.state.get(deliveryMilestoneKey(goalId));
-        if (!isDeliveryState(marker)) return;
-        const goal = await ctx.goals.get(goalId, event.companyId);
-        if (!goal) return;
-        if (marker.phase !== "completed" && goal.status === "achieved") {
-          await ctx.goals.update(goalId, { status: marker.phase === "milestone_pending" ? "planned" : "active" }, event.companyId);
-          ctx.logger.warn("Reverted an out-of-band Milestone completion", { companyId: event.companyId, goalId });
-        }
-      };
-
-      ctx.data.register("delivery-control", deliveryData);
-
-      ctx.actions.register("register-goal", async (params, context) => {
-        const companyId = readCompanyId(params, context.companyId);
-        return serialized(companyId, () => registerGoal(companyId, actorUser(context), params));
-      });
-
-      ctx.actions.register("adopt-goal", async (params, context) => {
-        const companyId = readCompanyId(params, context.companyId);
-        return serialized(companyId, () => adoptGoal(companyId, actorUser(context), params));
-      });
-
-      ctx.actions.register("propose-milestone", async (params, context) => {
-        const companyId = readCompanyId(params, context.companyId);
-        const agentId = actorAgentId(context);
-        return serialized(companyId, () => proposeMilestone(companyId, agentId, params));
-      });
-
-      ctx.actions.register("confirm-milestone", async (params, context) => {
-        const companyId = readCompanyId(params, context.companyId);
-        return serialized(companyId, () => confirmMilestone(companyId, actorUser(context), params));
-      });
-
-      ctx.actions.register("repair-delivery-orchestration", async (params, context) => {
-        const companyId = readCompanyId(params, context.companyId);
-        return serialized(companyId, () => repairDeliveryOrchestration(companyId, actorUser(context)));
-      });
-
-      ctx.actions.register("create-root-task", async (params, context) => {
-        const companyId = readCompanyId(params, context.companyId);
-        const agentId = actorAgentId(context);
-        return serialized(companyId, () => createRootTask(companyId, agentId, context.actor.runId, params));
-      });
-
-      ctx.actions.register("create-child-task", async (params, context) => {
-        const companyId = readCompanyId(params, context.companyId);
-        const agentId = actorAgentId(context);
-        return serialized(companyId, () => createChildTask(companyId, agentId, context.actor.runId, params));
-      });
-
-      ctx.actions.register("review-node", async (params, context) => {
-        const companyId = readCompanyId(params, context.companyId);
-        const agentId = actorAgentId(context);
-        return serialized(companyId, () => reviewNode(companyId, agentId, context.actor.runId, params));
-      });
-
-      ctx.actions.register("record-milestone-confirmation", async (params, context) => {
-        const companyId = readCompanyId(params, context.companyId);
-        return serialized(companyId, () => recordMilestoneConfirmation(
-          companyId,
-          actorUser(context),
-          params,
-        ));
-      });
-
       ctx.tools.register(
-        "propose-milestone",
+        "inspect-operation-state",
         {
-          displayName: "Propose Milestone",
-          description: "Create a Milestone proposal below a registered Goal.",
-          parametersSchema: {
-            type: "object",
-            properties: {
-              goalId: { type: "string" },
-              title: { type: "string" },
-              description: { type: "string" },
-            },
-            required: ["goalId", "title", "description"],
-          },
+          displayName: "Inspect Operation State",
+          description: "Read Company maintenance mode, run budget and autonomous Goal dispatch configuration.",
+          parametersSchema: { type: "object", properties: {}, additionalProperties: false },
         },
-        async (params, runContext: ToolRunContext) => {
-          const result = await serialized(runContext.companyId, () => proposeMilestone(
-            runContext.companyId,
-            runContext.agentId,
-            params as Record<string, unknown>,
-          ));
+        async (_params, runContext: ToolRunContext) => {
+          const result = await operationData(runContext.companyId);
           return { content: JSON.stringify(result), data: result };
         },
       );
 
-      ctx.tools.register(
-        "create-root-task",
-        {
-          displayName: "Create Root Task",
-          description: "Create the Root Task after a human confirms the Milestone.",
-          parametersSchema: {
-            type: "object",
-            properties: {
-              goalId: { type: "string" },
-              projectId: { type: "string" },
-              title: { type: "string" },
-              description: { type: "string" },
-              assigneeAgentId: { type: "string" },
-            },
-            required: ["goalId", "title", "assigneeAgentId"],
-          },
-        },
-        async (params, runContext: ToolRunContext) => {
-          const result = await serialized(runContext.companyId, () => createRootTask(
-            runContext.companyId,
-            runContext.agentId,
-            runContext.runId,
-            params as Record<string, unknown>,
-          ));
-          return { content: JSON.stringify(result), data: result };
-        },
-      );
-
-      ctx.tools.register(
-        "create-child-task",
-        {
-          displayName: "Create child Task",
-          description: "Create a child Task only below the current Agent's owned Node Task.",
-          parametersSchema: {
-            type: "object",
-            properties: {
-              parentIssueId: { type: "string" },
-              title: { type: "string" },
-              description: { type: "string" },
-              assigneeAgentId: { type: "string" },
-              blockedByIssueIds: { type: "array", items: { type: "string" } },
-            },
-            required: ["parentIssueId", "title", "assigneeAgentId"],
-          },
-        },
-        async (params, runContext: ToolRunContext) => {
-          const result = await serialized(runContext.companyId, () => createChildTask(
-            runContext.companyId,
-            runContext.agentId,
-            runContext.runId,
-            params as Record<string, unknown>,
-          ));
-          return { content: JSON.stringify(result), data: result };
-        },
-      );
-
-      ctx.tools.register(
-        "review-node",
-        {
-          displayName: "Review Node Task",
-          description: "Approve or reject a Node Task after all direct child Tasks are terminal.",
-          parametersSchema: {
-            type: "object",
-            properties: {
-              issueId: { type: "string" },
-              decision: { type: "string", enum: ["approved", "rejected"] },
-              reason: { type: "string" },
-              assigneeAgentId: { type: "string" },
-            },
-            required: ["issueId", "decision"],
-          },
-        },
-        async (params, runContext: ToolRunContext) => {
-          const result = await serialized(runContext.companyId, () => reviewNode(
-            runContext.companyId,
-            runContext.agentId,
-            runContext.runId,
-            params as Record<string, unknown>,
-          ));
-          return { content: JSON.stringify(result), data: result };
-        },
-      );
-
-      ctx.tools.register(
-        "request-milestone-review",
-        {
-          displayName: "Request Milestone Review",
-          description: "Send a Git-backed Milestone completion report to the Board for confirmation.",
-          parametersSchema: {
-            type: "object",
-            properties: {
-              goalId: { type: "string" },
-              reportPath: { type: "string" },
-              commitSha: { type: "string" },
-              summary: { type: "string" },
-              evidence: { type: "string" },
-            },
-            required: ["goalId", "reportPath", "commitSha", "summary"],
-          },
-        },
-        async (params, runContext: ToolRunContext) => {
-          const result = await serialized(runContext.companyId, () => requestMilestoneReview(
-            runContext.companyId,
-            runContext.agentId,
-            params as Record<string, unknown>,
-          ));
-          return { content: JSON.stringify(result), data: result };
-        },
-      );
-
-      ctx.events.on("issue.created", (event) => serialized(event.companyId, () => handleIssueCreated(event)));
-      ctx.events.on("issue.updated", (event) => serialized(event.companyId, () => handleIssueUpdated(event)));
-      ctx.events.on("goal.updated", (event) => serialized(event.companyId, () => handleGoalUpdated(event)));
-
-      const operationData = async (companyId: string) => {
-        const [state, runBudget, agents, artifactIssueId, activeGoalId, companyGoals] = await Promise.all([
-          getState(companyId),
-          getHourlyRunBudget(companyId),
-          ctx.agents.list({ companyId }),
-          ctx.state.get(companyStateKey(companyId, ARTIFACT_ISSUE_KEY)),
-          ctx.state.get(companyStateKey(companyId, ACTIVE_DELIVERY_GOAL_KEY)),
-          ctx.goals.list({ companyId, level: "company", limit: 100 }),
-        ]);
-        const delivery = typeof activeGoalId === "string"
-          ? await deliveryData({ companyId, goalId: activeGoalId })
-          : null;
-        return {
-          state,
-          runBudget,
-          agents: agents.map(({ id, name, title, role, status }: Agent) => ({ id, name, title, role, status })),
-          artifactIssueId: typeof artifactIssueId === "string" ? artifactIssueId : null,
-          companyGoals: companyGoals.map(({ id, title, status }: Goal) => ({ id, title, status })),
-          delivery,
-        };
-      };
+      ctx.data.register("operation-control", async (params) => operationData(readCompanyId(params)));
 
       ctx.actions.register("inspect-operation-state", async (params, context) => {
-        actorAgentId(context);
+        requireAgentActor(context);
         return operationData(readCompanyId(params, context.companyId));
       });
 
-      ctx.data.register("operation-control", async (params) => {
-        return operationData(readCompanyId(params));
+      ctx.actions.register("dispatch-goal", async (params, context) => {
+        requireHumanActor(context);
+        const companyId = readCompanyId(params, context.companyId);
+        const goalId = params.goalId;
+        if (typeof goalId !== "string" || !goalId) throw new Error("goalId is required");
+        return serialized(companyId, () => dispatchGoal(companyId, goalId));
       });
 
       ctx.actions.register("start-maintenance", async (params, context) => {
+        requireHumanActor(context);
         const companyId = readCompanyId(params, context.companyId);
-        actorUser(context);
         const ownerAgentId = params.ownerAgentId;
         const stopPolicy = params.stopPolicy;
-        const reason = typeof params.reason === "string" && params.reason.trim()
-          ? params.reason.trim()
-          : null;
+        const reason = typeof params.reason === "string" && params.reason.trim() ? params.reason.trim() : null;
         if (typeof ownerAgentId !== "string") throw new Error("ownerAgentId is required");
         if (stopPolicy !== "drain" && stopPolicy !== "immediate") {
           throw new Error("stopPolicy must be drain or immediate");
@@ -1493,11 +445,13 @@ export function createOperationPlugin() {
       });
 
       ctx.actions.register("resume-normal", async (params, context) => {
+        requireHumanActor(context);
         const companyId = readCompanyId(params, context.companyId);
-        actorUser(context);
         return serialized(companyId, () => resumeNormal(companyId));
       });
 
+      ctx.events.on("goal.created", (event) => serialized(event.companyId, () => handleGoal(event)));
+      ctx.events.on("goal.updated", (event) => serialized(event.companyId, () => handleGoal(event)));
       ctx.events.on("agent.run.started", (event) => serialized(event.companyId, () => handleStarted(event)));
       for (const eventType of ["agent.run.finished", "agent.run.failed", "agent.run.cancelled"] as const) {
         ctx.events.on(eventType, (event) => serialized(event.companyId, () => handleTerminal(event)));

@@ -3,9 +3,9 @@ import type { PaperclipPluginManifestV1 } from "@paperclipai/plugin-sdk";
 const manifest = {
   id: "local.operation-control",
   apiVersion: 1,
-  version: "0.6.3",
+  version: "1.0.0",
   displayName: "Operation Control",
-  description: "Drain or immediately pause agents and enforce human-gated Goal → Milestone → Task delivery.",
+  description: "Maintenance safety, run caps and one-shot autonomous dispatch of Company Goals to Paperclip native Tasks.",
   author: "Local",
   categories: ["automation", "ui"],
   capabilities: [
@@ -17,18 +17,9 @@ const manifest = {
     "plugin.state.read",
     "plugin.state.write",
     "goals.read",
-    "goals.create",
-    "goals.update",
-    "project.workspaces.read",
-    "execution.workspaces.read",
     "issues.read",
     "issues.create",
-    "issues.update",
     "issues.wakeup",
-    "issue.relations.read",
-    "issue.subtree.read",
-    "issue.comments.create",
-    "issue.documents.write",
     "ui.dashboardWidget.register"
   ],
   instanceConfigSchema: {
@@ -37,8 +28,13 @@ const manifest = {
       orchestratorRole: {
         type: "string",
         minLength: 1,
-        title: "Workflow orchestrator role",
-        description: "Agent role allowed to propose Milestones and create Root Tasks."
+        title: "Autonomous Goal orchestrator role",
+        description: "The single active Agent role that receives new Company Goals and decomposes them into native Tasks."
+      },
+      autoDispatchGoals: {
+        type: "boolean",
+        title: "Automatically dispatch Company Goals",
+        description: "Create one idempotent orchestration Task when an active Company Goal is created or resumed."
       },
       maxRunsPerHour: {
         type: "integer",
@@ -52,81 +48,10 @@ const manifest = {
   },
   tools: [
     {
-      name: "propose-milestone",
-      displayName: "Propose Milestone",
-      description: "Create a Milestone proposal below a registered Goal.",
-      parametersSchema: {
-        type: "object",
-        properties: {
-          goalId: { type: "string" },
-          title: { type: "string" },
-          description: { type: "string" }
-        },
-        required: ["goalId", "title", "description"]
-      }
-    },
-    {
-      name: "create-root-task",
-      displayName: "Create Root Task",
-      description: "Create the Root Task after human Milestone confirmation.",
-      parametersSchema: {
-        type: "object",
-        properties: {
-          goalId: { type: "string" },
-          projectId: { type: "string" },
-          title: { type: "string" },
-          description: { type: "string" },
-          assigneeAgentId: { type: "string" }
-        },
-        required: ["goalId", "title", "assigneeAgentId"]
-      }
-    },
-    {
-      name: "create-child-task",
-      displayName: "Create child Task",
-      description: "Create a child Task below the current Agent's owned Node Task.",
-      parametersSchema: {
-        type: "object",
-        properties: {
-          parentIssueId: { type: "string" },
-          title: { type: "string" },
-          description: { type: "string" },
-          assigneeAgentId: { type: "string" },
-          blockedByIssueIds: { type: "array", items: { type: "string" } }
-        },
-        required: ["parentIssueId", "title", "assigneeAgentId"]
-      }
-    },
-    {
-      name: "review-node",
-      displayName: "Review Node Task",
-      description: "Approve or reject a Node Task after its child Tasks finish.",
-      parametersSchema: {
-        type: "object",
-        properties: {
-          issueId: { type: "string" },
-          decision: { type: "string", enum: ["approved", "rejected"] },
-          reason: { type: "string" },
-          assigneeAgentId: { type: "string" }
-        },
-        required: ["issueId", "decision"]
-      }
-    },
-    {
-      name: "request-milestone-review",
-      displayName: "Request Milestone Review",
-      description: "Send a Git-backed Milestone completion report to the Board for confirmation.",
-      parametersSchema: {
-        type: "object",
-        properties: {
-          goalId: { type: "string" },
-          reportPath: { type: "string" },
-          commitSha: { type: "string" },
-          summary: { type: "string" },
-          evidence: { type: "string" }
-        },
-        required: ["goalId", "reportPath", "commitSha", "summary"]
-      }
+      name: "inspect-operation-state",
+      displayName: "Inspect Operation State",
+      description: "Read maintenance mode, run budget and autonomous Goal dispatch configuration.",
+      parametersSchema: { type: "object", properties: {}, additionalProperties: false }
     }
   ],
   entrypoints: {

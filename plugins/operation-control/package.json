@@ -1,9 +1,9 @@
 {
   "name": "paperclip-plugin-operation-control",
-  "version": "0.6.3",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Gracefully drain or immediately pause Paperclip agents for maintenance windows.",
+  "description": "Keep Paperclip companies safe during autonomous Goal delivery and maintenance windows.",
   "paperclipPlugin": {
     "manifest": "dist/manifest.js",
     "worker": "dist/worker.js",

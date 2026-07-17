@@ -1,6 +1,6 @@
 # Paperclip Ops Role Snapshot
 
-Paperclip 원본 instructions를 2026-07-17에 다시 읽어 저장소 snapshot과 byte-for-byte 일치를 확인했다.
+Operation Control 1.0.0 적용 뒤 Paperclip 원본 instructions를 2026-07-17에 다시 읽어 저장소 snapshot과 byte-for-byte 일치를 확인했다. 모든 Role은 custom delivery tool 대신 native Task와 execution policy를 사용한다.
 
 | Role | Agent ID | 원본 |
 |---|---|---|

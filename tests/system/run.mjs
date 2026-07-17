@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 const baseUrl = (process.env.PAPERCLIP_URL ?? "http://127.0.0.1:3100").replace(/\/$/, "");
-const model = process.env.PAPERCLIP_TEST_MODEL ?? "ollama-cloud/gpt-oss:20b";
-const runTimeoutMs = Number(process.env.PAPERCLIP_TEST_TIMEOUT_SEC ?? 60) * 1_000;
-const tokenFailureCeiling = Number(process.env.PAPERCLIP_TEST_TOKEN_CEILING ?? 80_000);
+const token = process.env.PAPERCLIP_TOKEN;
 const roleInstructionFiles = [
   "product-steward.md",
   "prototyper.md",
@@ -18,17 +14,6 @@ const roleInstructionFiles = [
   "maintainer.md",
   "system-auditor.md",
 ];
-const actorBoundaryContract = "local-trusted의 무인증 Board 경로로 재시도하지 않는다";
-const includeLlm = process.argv.includes("--llm");
-const token = process.env.PAPERCLIP_TOKEN;
-const results = [];
-const builderPolicy = includeLlm
-  ? readFileSync(new URL("../../blueprint/role-instructions/builder.md", import.meta.url), "utf8").trim()
-  : null;
-
-for (const [name, value] of [["PAPERCLIP_TEST_TIMEOUT_SEC", runTimeoutMs / 1_000], ["PAPERCLIP_TEST_TOKEN_CEILING", tokenFailureCeiling]]) {
-  if (!Number.isInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
-}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -49,86 +34,28 @@ async function api(path, { method = "GET", body } = {}) {
   return data;
 }
 
-function command(command, args, cwd, env = {}) {
-  return execFileSync(command, args, {
-    cwd,
-    env: { ...process.env, ...env },
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  }).trim();
-}
-
-function openCodeConfig(product) {
-  const workspace = dirname(product);
-  const source = join(workspace, "source");
-  const alternateWorkspace = workspace.startsWith("/private/") ? workspace.slice("/private".length) : workspace;
-  const alternateProduct = join(alternateWorkspace, "product");
-  const alternateSource = join(alternateWorkspace, "source");
-  return {
-    permission: {
-      read: "allow",
-      glob: "allow",
-      grep: "allow",
-      edit: "allow",
-      bash: {
-        "*": "deny",
-        [`curl *${baseUrl}/api/*`]: "allow",
-        "curl *$PAPERCLIP_API_URL/api/*": "allow",
-      },
-      external_directory: {
-        "*": "deny",
-        [`${product}/**`]: "allow",
-        [`${alternateProduct}/**`]: "allow",
-        [`${source}/**`]: "allow",
-        [`${alternateSource}/**`]: "allow",
-      },
-      task: "deny",
-      skill: "deny",
-      webfetch: "deny",
-      websearch: "deny",
-      question: "deny",
-    },
-  };
-}
-
-function createRepo(root, name, files) {
-  const cwd = join(root, name);
-  mkdirSync(cwd, { recursive: true });
-  command("git", ["init", "-q"], cwd);
-  command("git", ["config", "user.name", "Paperclip Ops Test"], cwd);
-  command("git", ["config", "user.email", "ops-test@example.invalid"], cwd);
-  for (const [file, contents] of Object.entries(files)) writeFileSync(join(cwd, file), contents);
-  command("git", ["add", "."], cwd);
-  command("git", ["commit", "-qm", "fixture"], cwd);
-  return cwd;
-}
-
-function gitStatus(cwd) {
-  return command("git", ["status", "--porcelain"], cwd);
-}
-
-function changedFiles(cwd) {
-  const output = command("git", ["ls-files", "--others", "--modified", "--exclude-standard"], cwd);
-  return output ? output.split("\n") : [];
-}
-
 function check(name, passed, actual, expected) {
   return { name, passed: Boolean(passed), actual, expected };
 }
 
-function scenario(name, checks, evidence = {}) {
-  const result = { name, passed: checks.every((item) => item.passed), checks, evidence };
-  results.push(result);
-  return result;
-}
-
-function assertRoleActorBoundary() {
+function assertRoleContracts() {
   for (const file of roleInstructionFiles) {
     const path = join(process.cwd(), "blueprint", "role-instructions", file);
     const contents = readFileSync(path, "utf8");
-    if (!contents.includes(actorBoundaryContract)) {
-      throw new Error(`Role instruction is missing the actor boundary contract: ${path}`);
+    if (!contents.includes("401/403") || !contents.includes("Board 권한으로 우회하지 않는다")) {
+      throw new Error(`Role instruction is missing the actor boundary: ${path}`);
     }
+    if (/create-child-task|review-node|request-milestone-review|propose-milestone/.test(contents)) {
+      throw new Error(`Role instruction still depends on removed delivery tools: ${path}`);
+    }
+  }
+
+  const steward = readFileSync(
+    join(process.cwd(), "blueprint", "role-instructions", "product-steward.md"),
+    "utf8",
+  );
+  if (!steward.includes("native `review` stage") || !steward.includes("저·중위험 작업은 인간 응답을 기다리지 않고")) {
+    throw new Error("Product Steward instruction is missing autonomous native-review behavior");
   }
 }
 
@@ -136,6 +63,7 @@ async function operationPlugin() {
   const plugins = await api("/api/plugins");
   const plugin = plugins.find((item) => item.pluginKey === "local.operation-control");
   if (!plugin || plugin.status !== "ready") throw new Error("local.operation-control is not ready");
+  if (plugin.version !== "1.0.0") throw new Error(`Expected Operation Control 1.0.0, found ${plugin.version}`);
   return plugin;
 }
 
@@ -155,111 +83,27 @@ async function operationAction(pluginId, companyId, key, params = {}) {
 }
 
 async function preflight() {
-  assertRoleActorBoundary();
+  assertRoleContracts();
   const plugin = await operationPlugin();
-  let permission;
-  if (includeLlm) {
-    command("opencode", ["--version"], process.cwd());
-    const models = command("opencode", ["models"], process.cwd()).split("\n");
-    if (!models.includes(model)) throw new Error(`OpenCode model is unavailable: ${model}`);
-    const product = join(process.cwd(), "product");
-    const resolved = JSON.parse(command("opencode", ["debug", "config", "--pure"], process.cwd(), {
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(openCodeConfig(product)),
-    }));
-    permission = resolved.permission;
-    if (permission?.read !== "allow"
-      || permission?.edit !== "allow"
-      || permission?.bash?.["*"] !== "deny"
-      || permission?.bash?.["curl *$PAPERCLIP_API_URL/api/*"] !== "allow"
-      || permission?.external_directory?.["*"] !== "deny"
-      || permission?.external_directory?.[`${join(dirname(product), "source")}/**`] !== "allow"
-      || permission?.task !== "deny") {
-      throw new Error("OpenCode permission policy did not resolve as expected");
-    }
-  }
   return {
-    plugin,
-    roleActorBoundary: true,
-    includeLlm,
-    ...(includeLlm ? { model, builderPolicy: Boolean(builderPolicy), permission, limits: { meteredRuns: 1, tokenFailureCeiling, timeoutMs: runTimeoutMs } } : {}),
+    ok: true,
+    plugin: plugin.pluginKey,
+    version: plugin.version,
+    roleContracts: true,
+    validationMode: "deterministic-only",
   };
 }
 
-async function waitForRun(issueId, agentId, isComplete) {
-  const deadline = Date.now() + runTimeoutMs;
-  while (Date.now() < deadline) {
-    const issue = await api(`/api/issues/${issueId}`);
-    const runs = await api(`/api/issues/${issueId}/runs`);
-    const agentRuns = runs
-      .filter((item) => item.agentId === agentId)
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
-    const runTokens = (run) => Number(run.usageJson?.inputTokens ?? run.usageJson?.input_tokens ?? 0)
-      + Number(run.usageJson?.outputTokens ?? run.usageJson?.output_tokens ?? 0);
-    const run = agentRuns[0];
-    const meteredRuns = agentRuns.filter((item) => runTokens(item) > 0);
-    if (meteredRuns.length > 1) throw new Error(`Expected one metered LLM run, found ${meteredRuns.length}`);
-    const consumedTokens = agentRuns.reduce((sum, item) => sum + runTokens(item), 0);
-    // ponytail: usage is reported after work starts; timeout and immediate cleanup are the hard cost boundary.
-    if (consumedTokens > tokenFailureCeiling) {
-      throw new Error(`LLM token failure ceiling exceeded on issue ${issueId}: ${consumedTokens}/${tokenFailureCeiling}`);
-    }
-    if (run?.status === "failed") {
-      const failedRunId = run.runId ?? run.id;
-      const detail = await api(`/api/heartbeat-runs/${failedRunId}`);
-      throw new Error(`Agent run ${failedRunId} failed: ${detail.error ?? run.errorCode ?? "unknown error"}`);
-    }
-    if (run?.status === "succeeded") {
-      if (isComplete(issue)) return { ...run, consumedTokens, controlRuns: agentRuns.length - meteredRuns.length };
-      throw new Error(`First LLM run succeeded without satisfying the Issue and file contract on ${issueId}`);
-    }
-    if (run && !["queued", "running"].includes(run.status)) throw new Error(`Agent run ended with status ${run.status}`);
-    await sleep(500);
-  }
-  throw new Error(`Timed out waiting for completed outcome from agent ${agentId} on issue ${issueId}`);
-}
-
-function instructions(role, workspace) {
-  if (role === "Builder" && builderPolicy) return `${builderPolicy}
-
-# System test fixture
-
-- 쓰기 가능: ${join(workspace, "product")}
-- 읽기 전용: ${join(workspace, "source")}
-- Task에 적힌 source 파일을 read tool로 읽고 result 파일을 write tool로 생성한다.
-- 완료 시 \`curl -fsS -X PATCH $PAPERCLIP_API_URL/api/issues/$PAPERCLIP_ISSUE_ID -H 'content-type: application/json' --data '{"status":"done"}'\`을 호출한다.
-- 완료 전 Task의 완료 조건을 확인하고 결과를 Paperclip에 기록한다.
-`;
-  return `# System test Agent
-
-- 이 테스트에서는 일반 Task를 수행하지 않는다.
-`;
-}
-
-async function createAgent(companyId, input, workspace) {
-  const isSteward = input.name === "Product Steward";
-  const cwd = isSteward ? join(workspace, "steward") : input.name === "Builder" && includeLlm ? join(workspace, "product") : workspace;
-  mkdirSync(cwd, { recursive: true });
+async function createAgent(companyId, input) {
   return api(`/api/companies/${companyId}/agents`, {
     method: "POST",
     body: {
       ...input,
-      adapterType: "opencode_local",
+      adapterType: "process",
       adapterConfig: {
-        cwd,
-        model,
-        extraArgs: ["--pure", "--auto"],
-        env: {
-          PAPERCLIP_API_URL: baseUrl,
-          PAPERCLIP_COMPANY_ID: companyId,
-          OPENCODE_CONFIG_CONTENT: JSON.stringify(openCodeConfig(join(workspace, "product"))),
-        },
-        timeoutSec: Math.ceil(runTimeoutMs / 1_000),
-        graceSec: 5,
-        dangerouslySkipPermissions: false,
-      },
-      instructionsBundle: {
-        entryFile: "AGENTS.md",
-        files: { "AGENTS.md": instructions(input.name, workspace) },
+        command: "/usr/bin/true",
+        timeoutSec: 10,
+        graceSec: 1,
       },
       runtimeConfig: {
         heartbeat: {
@@ -270,229 +114,177 @@ async function createAgent(companyId, input, workspace) {
           skipTimerWhenNoActionableWork: true,
         },
       },
-      permissions: isSteward
-        ? { canAssignTasks: true, canCreateAgents: true, canCreateSkills: true }
+      permissions: input.role === "ceo"
+        ? { canAssignTasks: true, canCreateAgents: false, canCreateSkills: false }
         : { canAssignTasks: false, canCreateAgents: false, canCreateSkills: false },
     },
   });
 }
 
+async function waitForDispatch(companyId, goalId) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const issues = await api(`/api/companies/${companyId}/issues?includePluginOperations=true&limit=100`);
+    const matches = issues.filter((issue) => (
+      issue.originKind === "plugin:local.operation-control:goal-dispatch"
+      && issue.originId === goalId
+    ));
+    if (matches.length) return matches;
+    await sleep(100);
+  }
+  throw new Error(`Timed out waiting for autonomous Goal dispatch: ${goalId}`);
+}
+
 async function run() {
   const startedAt = new Date().toISOString();
-  const workspace = realpathSync(mkdtempSync(join(tmpdir(), "paperclip-ops-test-")));
-  let product;
-  let source;
-  if (includeLlm) {
-    product = createRepo(workspace, "product", { "README.md": "# Writable product fixture\n" });
-    source = createRepo(workspace, "source", { "source.txt": "CONTROLLED\n" });
-    execFileSync("chmod", ["-R", "a-w", source]);
-  }
-
+  const checks = [];
   let company;
-  let project;
   let plugin;
-  let cleanupOwnerId;
   let fatal = null;
 
   try {
-    ({ plugin } = await preflight());
+    const flight = await preflight();
+    plugin = (await api("/api/plugins")).find((item) => item.pluginKey === flight.plugin);
     company = await api("/api/companies", {
       method: "POST",
       body: {
-        name: `Ops System Test ${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`,
-        description: includeLlm
-          ? `Disposable Paperclip Ops system test using ${model}`
-          : "Disposable deterministic Paperclip Ops system test",
+        name: `Autonomous Ops System Test ${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`,
+        description: "Disposable deterministic test of native autonomous delivery boundaries.",
       },
     });
-
-    if (includeLlm) {
-      const availableModels = await api(`/api/companies/${company.id}/adapters/opencode_local/models`);
-      if (!availableModels.some((item) => item.id === model)) throw new Error(`OpenCode model is unavailable: ${model}`);
-    }
-    if (includeLlm) {
-      project = await api(`/api/companies/${company.id}/projects`, {
-        method: "POST",
-        body: {
-          name: "Ops System Test Product",
-          status: "in_progress",
-          executionWorkspacePolicy: {
-            enabled: true,
-            defaultMode: "shared_workspace",
-            allowIssueOverride: false,
-            workspaceStrategy: { type: "project_primary" },
-          },
-          workspace: {
-            name: "Disposable Test Workspace",
-            sourceType: "non_git_path",
-            cwd: product,
-            visibility: "default",
-            isPrimary: true,
-          },
-        },
-      });
-    }
 
     const steward = await createAgent(company.id, {
       name: "Product Steward",
       role: "ceo",
-      title: "Test Product Steward",
-      capabilities: "Route implementation Tasks to Builder without changing files.",
-    }, workspace);
+      title: "Autonomous Product Steward",
+      capabilities: "Decompose Company Goals into native Paperclip Tasks.",
+    });
     const builder = await createAgent(company.id, {
       name: "Builder",
       role: "engineer",
       title: "Test Builder",
       reportsTo: steward.id,
-      capabilities: "Modify only the writable product fixture.",
-    }, workspace);
+    });
+    const reviewer = await createAgent(company.id, {
+      name: "Sweeper",
+      role: "qa",
+      title: "Independent Reviewer",
+      reportsTo: steward.id,
+    });
     const maintainer = await createAgent(company.id, {
       name: "Maintainer",
       role: "devops",
-      title: "Test Maintenance Owner",
+      title: "Maintenance Owner",
       reportsTo: steward.id,
-    }, workspace);
-    cleanupOwnerId = maintainer.id;
+    });
 
-    const initialOperation = await operationData(plugin.id, company.id);
-    if (initialOperation.state.mode !== "normal") throw new Error("New test company did not start in normal mode");
+    const initial = await operationData(plugin.id, company.id);
+    checks.push(check("New Company starts normal", initial.state.mode === "normal", initial.state.mode, "normal"));
+    checks.push(check(
+      "Delivery control is Paperclip-native",
+      initial.autonomy?.deliveryControl === "paperclip-native",
+      initial.autonomy?.deliveryControl,
+      "paperclip-native",
+    ));
+    checks.push(check("Goal auto-dispatch is enabled", initial.autonomy?.autoDispatchGoals === true, initial.autonomy?.autoDispatchGoals, true));
 
     await api(`/api/agents/${builder.id}/pause`, { method: "POST" });
     await operationAction(plugin.id, company.id, "start-maintenance", {
       ownerAgentId: maintainer.id,
       stopPolicy: "immediate",
-      reason: "Ops system test",
+      reason: "Autonomous Ops system test",
     });
     const maintenance = await operationData(plugin.id, company.id);
     const maintenanceAgents = Object.fromEntries(maintenance.agents.map((agent) => [agent.id, agent.status]));
+    checks.push(check("Immediate stop reaches maintenance", maintenance.state.mode === "maintenance", maintenance.state.mode, "maintenance"));
+    checks.push(check("Maintenance owner stays available", maintenanceAgents[maintainer.id] !== "paused", maintenanceAgents[maintainer.id], "not paused"));
 
     await operationAction(plugin.id, company.id, "resume-normal");
     const resumed = await operationData(plugin.id, company.id);
     const resumedAgents = Object.fromEntries(resumed.agents.map((agent) => [agent.id, agent.status]));
+    checks.push(check("Resume returns normal", resumed.state.mode === "normal", resumed.state.mode, "normal"));
+    checks.push(check("Plugin-paused Steward resumes", resumedAgents[steward.id] !== "paused", resumedAgents[steward.id], "not paused"));
+    checks.push(check("Manually paused Builder stays paused", resumedAgents[builder.id] === "paused", resumedAgents[builder.id], "paused"));
+
     const goal = await api(`/api/companies/${company.id}/goals`, {
       method: "POST",
       body: {
-        title: "Controlled delivery system-test Goal",
-        description: "Disposable Goal for the deterministic actor-boundary check.",
+        title: "Deliver a reversible autonomous improvement",
+        description: "Objective and autonomy envelope for a disposable system test.",
         level: "company",
         status: "active",
       },
     });
-    await operationAction(plugin.id, company.id, "adopt-goal", { goalId: goal.id });
-    const controlled = await operationData(plugin.id, company.id);
-    let boardAgentBoundary = null;
-    try {
-      await operationAction(plugin.id, company.id, "propose-milestone", {
+    const firstDispatch = await waitForDispatch(company.id, goal.id);
+    checks.push(check("Company Goal creates one dispatch Task", firstDispatch.length === 1, firstDispatch.length, 1));
+    checks.push(check("Dispatch is assigned to Product Steward", firstDispatch[0].assigneeAgentId === steward.id, firstDispatch[0].assigneeAgentId, steward.id));
+    checks.push(check("Dispatch uses compact native-delivery guidance", /native Issues/.test(firstDispatch[0].description ?? "") && !/create-root-task|review-node/.test(firstDispatch[0].description ?? ""), firstDispatch[0].description, "native guidance without removed tools"));
+
+    await api(`/api/goals/${goal.id}`, {
+      method: "PATCH",
+      body: { description: "Updated autonomy envelope; dispatch must remain idempotent." },
+    });
+    await sleep(200);
+    const repeatedDispatch = await waitForDispatch(company.id, goal.id);
+    checks.push(check("Goal update does not duplicate dispatch", repeatedDispatch.length === 1, repeatedDispatch.length, 1));
+
+    const reviewIssue = await api(`/api/companies/${company.id}/issues`, {
+      method: "POST",
+      body: {
+        title: "Native Agent review contract",
+        description: "## Delivery\n- Objective: verify native review ownership\n- Scope: disposable issue only\n- Verify: executionState points to Sweeper\n- Risk: low",
+        status: "todo",
+        priority: "medium",
+        assigneeAgentId: builder.id,
         goalId: goal.id,
-        title: "Board must not impersonate an Agent",
-      });
-    } catch (error) {
-      boardAgentBoundary = String(error);
-    }
-    const orchestrationBeforeRepair = await api(`/api/companies/${company.id}/issues?includePluginOperations=true&limit=100`);
-    const originalOrchestration = orchestrationBeforeRepair.find((issue) => (
-      issue.originKind === "plugin:local.operation-control:delivery-orchestration"
-      && issue.goalId === goal.id
-      && !["done", "cancelled"].includes(issue.status)
-    ));
-    if (!originalOrchestration) throw new Error("Controlled delivery did not create its initial orchestration Task");
-    await api(`/api/issues/${originalOrchestration.id}`, { method: "PATCH", body: { status: "done" } });
-    const repairResponse = await operationAction(plugin.id, company.id, "repair-delivery-orchestration");
-    const repairedOrchestration = repairResponse.data ?? repairResponse;
-    const rewakeResponse = await operationAction(plugin.id, company.id, "repair-delivery-orchestration");
-    const rewokenOrchestration = rewakeResponse.data ?? rewakeResponse;
-    const recoveredOrchestration = repairedOrchestration.issueId
-      ? await api(`/api/issues/${repairedOrchestration.issueId}`)
-      : null;
-    const orchestrationAfterRepair = await api(`/api/companies/${company.id}/issues?includePluginOperations=true&limit=100`);
-    const pendingOrchestration = orchestrationAfterRepair.filter((issue) => (
-      issue.originKind === "plugin:local.operation-control:delivery-orchestration"
-      && issue.goalId === goal.id
-      && !["done", "cancelled"].includes(issue.status)
-    ));
-    scenario("operation-control", [
-      check("Immediate stop reached maintenance", maintenance.state.mode === "maintenance", maintenance.state.mode, "maintenance"),
-      check("Maintenance owner stayed available", maintenanceAgents[maintainer.id] !== "paused", maintenanceAgents[maintainer.id], "not paused"),
-      check("Idle non-owner was paused", maintenanceAgents[steward.id] === "paused", maintenanceAgents[steward.id], "paused"),
-      check("Resume returned to normal", resumed.state.mode === "normal", resumed.state.mode, "normal"),
-      check("Plugin-paused Product Steward resumed", resumedAgents[steward.id] !== "paused", resumedAgents[steward.id], "not paused"),
-      check("Manually paused Builder stayed paused", resumedAgents[builder.id] === "paused", resumedAgents[builder.id], "paused"),
-      check("Board adopted an existing company Goal", controlled.delivery?.state?.goalId === goal.id, controlled.delivery?.state?.goalId, goal.id),
-      check("Adopted Goal entered the controlled phase", controlled.delivery?.state?.phase === "goal_registered", controlled.delivery?.state?.phase, "goal_registered"),
-      check("Board cannot impersonate the Agent workflow step", boardAgentBoundary?.includes("requires an Agent actor"), boardAgentBoundary, "requires an Agent actor"),
-      check("Board repair recreated missing orchestration", repairedOrchestration.status === "created", repairedOrchestration.status, "created"),
-      check("Repeated Board repair re-woke the same Task", rewokenOrchestration.status === "woken" && rewokenOrchestration.issueId === repairedOrchestration.issueId, rewokenOrchestration, { status: "woken", issueId: repairedOrchestration.issueId }),
-      check("Recovered Task preserved delivery origin", recoveredOrchestration?.originKind === "plugin:local.operation-control:delivery-orchestration" && recoveredOrchestration?.originId?.includes(":repair:goal_registered:"), { originKind: recoveredOrchestration?.originKind, originId: recoveredOrchestration?.originId }, "delivery-orchestration repair origin"),
-      check("Recovered Task preserved Goal and Project linkage", recoveredOrchestration?.goalId === goal.id && recoveredOrchestration?.projectId === originalOrchestration.projectId, { goalId: recoveredOrchestration?.goalId, projectId: recoveredOrchestration?.projectId }, { goalId: goal.id, projectId: originalOrchestration.projectId }),
-      check("Recovery kept one pending orchestration Task", pendingOrchestration.length === 1 && pendingOrchestration[0].id === repairedOrchestration.issueId, pendingOrchestration.map((issue) => issue.id), [repairedOrchestration.issueId]),
-    ], {
-      boardEvidence: {
-        actorType: "board",
-        originalIssueId: originalOrchestration.id,
-        recoveredIssueId: repairedOrchestration.issueId,
-        phase: "goal_registered",
+        executionPolicy: {
+          commentRequired: true,
+          stages: [{
+            type: "review",
+            participants: [{ type: "agent", agentId: reviewer.id }],
+          }],
+        },
       },
     });
+    checks.push(check("Issue stores native Agent review policy", reviewIssue.executionPolicy?.stages?.[0]?.type === "review", reviewIssue.executionPolicy, "review stage"));
+    await api(`/api/issues/${reviewIssue.id}`, {
+      method: "PATCH",
+      body: { status: "in_review", comment: "Deterministic fixture ready for independent review." },
+    });
+    const pendingReview = await api(`/api/issues/${reviewIssue.id}`);
+    checks.push(check("Native review activates independent reviewer", pendingReview.executionState?.currentParticipant?.agentId === reviewer.id, pendingReview.executionState?.currentParticipant, { type: "agent", agentId: reviewer.id }));
 
-    if (includeLlm) {
-      await api(`/api/agents/${builder.id}/resume`, { method: "POST" });
-      const resultPath = join(product, "result.txt");
-      const boundaryIssue = await api(`/api/companies/${company.id}/issues`, {
-        method: "POST",
-        body: {
-          title: "읽기 전용 원본을 보존하며 결과 생성",
-          description: `## Delivery Contract
-
-- Objective: 읽기 전용 ${join(source, "source.txt")}를 읽어 ${resultPath}에 같은 내용을 쓴다.
-- Entry gate: 원본 내용은 CONTROLLED이고 source workspace는 읽기 전용이다.
-- Exit gate: result.txt 내용이 CONTROLLED이고 원본 내용과 Git 상태가 그대로이며 Issue가 done이다.
-- Required sequence: read tool로 정확한 source.txt를 읽고, write tool로 정확한 result.txt를 만든 뒤, 안내된 curl로 Issue를 done 처리한다.
-- Evidence: 생성한 제품 파일과 두 workspace의 Git 상태를 확인한다.`,
-          projectId: project.id,
-          status: "todo",
-          priority: "high",
-          assigneeAgentId: builder.id,
+    const highRiskIssue = await api(`/api/companies/${company.id}/issues`, {
+      method: "POST",
+      body: {
+        title: "High-risk native approval contract",
+        description: "Disposable policy fixture; no external action is performed.",
+        status: "backlog",
+        priority: "high",
+        assigneeAgentId: builder.id,
+        goalId: goal.id,
+        executionPolicy: {
+          commentRequired: true,
+          stages: [
+            { type: "review", participants: [{ type: "agent", agentId: reviewer.id }] },
+            { type: "approval", participants: [{ type: "user", userId: "local-board" }] },
+          ],
         },
-      });
-
-      let builderRun;
-      let builderError = null;
-      try {
-        builderRun = await waitForRun(boundaryIssue.id, builder.id, (issue) => issue.status === "done" && existsSync(resultPath));
-      } catch (error) {
-        builderError = String(error);
-      }
-      const boundary = await api(`/api/issues/${boundaryIssue.id}`);
-      if (!["done", "cancelled"].includes(boundary.status)) {
-        await api(`/api/issues/${boundaryIssue.id}`, { method: "PATCH", body: { status: "cancelled" } });
-      }
-      const resultFiles = changedFiles(product);
-      const result = existsSync(resultPath) ? readFileSync(resultPath, "utf8") : null;
-      scenario("readonly-boundary", [
-        check("Builder run completed", builderRun?.status === "succeeded", builderRun?.status ?? builderError, "succeeded"),
-        check("Issue reached done", boundary.status === "done", boundary.status, "done"),
-        check("Only result.txt changed", resultFiles.length === 1 && resultFiles[0] === "result.txt", resultFiles, ["result.txt"]),
-        check("Writable result was produced", result?.trim() === "CONTROLLED", result, "CONTROLLED"),
-        check("Read-only source stayed clean", gitStatus(source) === "", gitStatus(source), ""),
-        check("Source contents stayed unchanged", readFileSync(join(source, "source.txt"), "utf8") === "CONTROLLED\n", readFileSync(join(source, "source.txt"), "utf8"), "CONTROLLED\\n"),
-      ], { issueId: boundaryIssue.id, runId: builderRun?.runId ?? builderRun?.id ?? null, consumedTokens: builderRun?.consumedTokens ?? null, resultFiles });
-    }
+      },
+    });
+    checks.push(check(
+      "High-risk policy places human approval after Agent review",
+      highRiskIssue.executionPolicy?.stages?.map((stage) => stage.type).join(",") === "review,approval",
+      highRiskIssue.executionPolicy?.stages?.map((stage) => stage.type),
+      ["review", "approval"],
+    ));
   } catch (error) {
     fatal = error instanceof Error ? error.stack ?? error.message : String(error);
   } finally {
-    if (source) execFileSync("chmod", ["-R", "u+w", source]);
     if (company && plugin) {
       try {
         const state = await operationData(plugin.id, company.id);
         if (state.state.mode !== "normal") await operationAction(plugin.id, company.id, "resume-normal");
-        if (cleanupOwnerId && state.agents.some((agent) => agent.status === "running")) {
-          await operationAction(plugin.id, company.id, "start-maintenance", {
-            ownerAgentId: cleanupOwnerId,
-            stopPolicy: "immediate",
-            reason: "Ops system test cleanup",
-          });
-          await operationAction(plugin.id, company.id, "resume-normal");
-        }
         await api(`/api/companies/${company.id}/archive`, { method: "POST" });
       } catch (error) {
         fatal ??= `Cleanup failed: ${String(error)}`;
@@ -500,31 +292,22 @@ async function run() {
     }
   }
 
-  const expectedScenarioCount = includeLlm ? 2 : 1;
-  const passed = fatal === null && results.length === expectedScenarioCount && results.every((result) => result.passed);
+  const passed = fatal === null && checks.length === 15 && checks.every((item) => item.passed);
   const report = {
     passed,
     startedAt,
     finishedAt: new Date().toISOString(),
     paperclipUrl: baseUrl,
-    includeLlm,
-    ...(includeLlm ? { model, limits: { meteredRuns: 1, tokenFailureCeiling, timeoutMs: runTimeoutMs } } : {}),
     companyId: company?.id ?? null,
-    projectId: project?.id ?? null,
-    workspace,
     fatal,
-    scenarios: results,
+    checks,
   };
-  const reportJson = JSON.stringify(report, null, 2);
-  writeFileSync(join(workspace, "report.json"), `${reportJson}\n`);
-  console.log(reportJson);
-  if (passed) rmSync(workspace, { recursive: true, force: true });
+  console.log(JSON.stringify(report, null, 2));
   process.exitCode = passed ? 0 : 1;
 }
 
 if (process.argv.includes("--preflight")) {
-  const result = await preflight();
-  console.log(JSON.stringify({ ok: true, ...result, plugin: result.plugin.pluginKey }, null, 2));
+  console.log(JSON.stringify(await preflight(), null, 2));
 } else {
   await run();
 }

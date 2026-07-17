@@ -6,11 +6,12 @@
 - Company Goal: AI Company Ops 시스템을 지속 개선하고 검증된 운영 표준을 제공한다
 - Project와 workspace: Paperclip Ops / `/Users/chanheekim/Dev/Paperclip-Ops`
 - 조직: Ops Steward 직속 System Auditor, Builder, Sweeper, Maintainer
-- Operation Control: `normal`, 시간당 run 20회, `executing`
+- Operation Control: `1.0.0`, `normal`, 시간당 run 20회, 새 Goal 자동 dispatch
+- Delivery: Paperclip native Issue, blocker와 `executionPolicy`
+- Review: 코드·사용자 산출물은 독립 Agent review, 고위험 행동만 human approval
 - Routine: `System Improvement Review` 주 1회, `Company Integrity Check` 6시간마다
-- Git 전달: 검증 뒤 Task 전용 commit과 현재 branch push를 실행 Role이 직접 완료하고 branch·full SHA·remote/ref를 근거로 남김
-- Actor 경계: Agent는 주입된 자기 인증만 사용하며 401/403 뒤 local-trusted 무인증 Board 경로로 재시도하지 않음
+- Actor 경계: Agent는 주입된 자기 인증만 사용하며 401/403 뒤 Board 권한으로 우회하지 않음
 
-이전 instance의 성공 run은 복제하지 않았다. `PAP-1`은 재구성 기준점이고 `PAP-2..13`, `PAP-15`, `PAP-23..24`가 미해결 Backlog를 추적한다. Board가 수정 Milestone `49fc84cb-d42c-496d-96e9-82d7fbb9324d`를 확인해 Root `PAP-18`과 순차 Node `PAP-19..22`를 시작했다. `PAP-19` 완료에서 `PAP-20` 자동 시작까지 자율 인계가 확인됐고, 현재 `PAP-20`은 Board actor 경계 재설계 전까지 blocked이며 Builder는 idle이다. 상세 ID, 검증과 남은 차이는 [current-state](current-state.md)와 [drift](drift.md)에 있다.
+이전 custom Milestone delivery는 마이그레이션 이력으로 종료했다. 확인된 Milestone과 `PAP-18..22`는 완료했고, 전환 중 생성된 `PAP-27..28`은 취소했다. 폐기한 custom delivery 전제의 Backlog `PAP-4`, `PAP-5`, `PAP-7`, `PAP-13`, `PAP-23`도 취소했다. 이후 delivery는 별도 plugin phase, Root/child tool, review bridge 또는 단계별 Board confirmation을 사용하지 않는다.
 
-`roles/*/AGENTS.md`는 적용 뒤 Paperclip 원본과 byte-for-byte 일치를 다시 확인한 current snapshot이다. 목표 계약은 `blueprint/role-instructions/*`와 [Ops Company 설계](../../docs/ops-company.md)에서 관리한다.
+`roles/*/AGENTS.md`는 적용 뒤 Paperclip 원본과 byte-for-byte 일치를 확인하는 current snapshot이다. 상세 ID, 검증과 남은 차이는 [current-state](current-state.md)와 [drift](drift.md)에 있다. 목표 계약은 `blueprint/role-instructions/*`와 [Ops Company 설계](../../docs/ops-company.md)에서 관리한다.
