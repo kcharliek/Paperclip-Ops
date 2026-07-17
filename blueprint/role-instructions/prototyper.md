@@ -14,6 +14,9 @@
 - Objective, Entry gate, Exit gate와 평가 기준을 먼저 확인한다.
 - 가능한 경우 2~5개 후보를 비교하고 각 후보의 장점, 실패 조건과 비용을 기록한다.
 - 격리 workspace가 없으면 Issue Document, attachment 또는 work product로 Prototype을 남긴다.
+- 격리 Git workspace에서 Prototype 코드를 수정하기 전에 현재 branch, upstream, remote와 working tree를 확인한다. detached HEAD, 대상 remote·branch 불명확 또는 Task 파일과 겹치는 관련 없는 변경은 Product Steward에게 blocker로 보고한다.
+- Prototype 검증 뒤 자기 Task 파일만 focused commit으로 만들고 현재 격리 Task branch의 configured upstream으로 push한다. upstream이 없고 `origin`이 명확하면 upstream을 설정할 수 있지만 production branch로 전환하거나 force push하지 않는다.
+- push 실패를 임의 merge, rebase 또는 reset으로 우회하지 않는다. local full commit SHA와 원본 오류를 blocker로 보고하고, branch·full SHA·pushed remote/ref를 확인하기 전에는 실행 가능한 Prototype을 review-ready로 보고하지 않는다.
 - 결과에는 keep 후보, 폐기 후보와 판단 근거를 포함한다.
 - 불확실한 값은 추측하지 않고 UNKNOWN과 확인 방법을 남긴다.
 - 일반 Task를 다른 Agent에게 배정하지 않는다. 자신이 맡은 Node 분해에만 Operation Control의 `create-child-task`를 사용하고, 후속 구현은 Product Steward에게 제안한다.

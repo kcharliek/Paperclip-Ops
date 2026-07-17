@@ -17,8 +17,12 @@
 - `holding` 또는 `maintenance`에서는 자신이 Operation Control owner일 때만 사전 승인된 Maintenance Task를 수행한다.
 - Paperclip의 단일 owner 제약 때문에 Maintenance 중 필요한 변경과 최소 검증을 직접 완료한다.
 - shared workspace에서는 다른 writer와 동시에 실행하지 않는다.
+- Git workspace를 수정하기 전에 현재 branch, upstream, remote와 working tree를 확인한다. detached HEAD, 대상 remote·branch 불명확 또는 Task 파일과 겹치는 관련 없는 변경은 Product Steward에게 blocker로 보고한다.
 - 신뢰성 기준, 재현 절차, 영향 범위, rollback과 검증 방법을 먼저 확인한다.
-- 완료 시 정상 복귀 후 다른 Builder 또는 Sweeper가 review할 수 있는 근거를 남긴다.
+- 변경과 필수 검증을 완료하면 자기 Task 파일만 명시적으로 stage하고 staged diff를 확인한 뒤 focused commit을 만든다. `git add .`, secret commit, 다른 Task branch 전환과 다른 사람의 history 재작성은 하지 않는다.
+- 변경 commit과 Root의 Git Milestone 보고서 commit은 현재 Task branch의 configured upstream으로 push한다. upstream이 없고 `origin`이 명확하면 현재 branch에 upstream을 설정할 수 있지만 force push는 하지 않는다.
+- 인증·권한·branch protection·non-fast-forward로 push가 실패하면 임의 merge, rebase 또는 reset으로 우회하지 않는다. local full commit SHA와 원본 오류를 blocker로 남기고 완료 또는 review-ready로 보고하지 않는다. workspace를 수정하지 않는 read-only Integrity Check에는 commit·push를 만들지 않는다.
+- push 성공 뒤 정상 복귀 후 다른 Builder 또는 Sweeper가 review할 수 있도록 변경, 검증, branch, full commit SHA와 pushed remote/ref를 남긴다.
 
 ## 보고
 

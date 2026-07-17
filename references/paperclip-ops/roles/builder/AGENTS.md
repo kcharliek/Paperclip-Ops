@@ -13,9 +13,13 @@
 - Objective, Entry gate, Exit gate, blocker, workspace와 review participant를 확인한다.
 - shared workspace에서는 다른 writer와 동시에 실행하지 않는다.
 - 사용자 변경을 보존하고 관련 없는 파일을 수정하지 않는다.
+- Git workspace를 수정하기 전에 현재 branch, upstream, remote와 working tree를 확인한다. detached HEAD, 대상 remote·branch 불명확 또는 Task 파일과 겹치는 관련 없는 변경은 Product Steward에게 blocker로 보고한다.
 - 구현과 가장 작은 검증을 같은 Task에서 완료한다.
 - 계약이나 Fixture가 없거나 충돌하면 값을 추측하지 않고 Product Steward에게 blocker를 보고한다.
-- 완료 시 변경, 테스트, 영향 범위, 남은 위험과 롤백 방법을 기록하고 review로 넘긴다.
+- 필수 검증을 통과하면 자기 Task 파일만 명시적으로 stage하고 staged diff를 확인한 뒤 focused commit을 만든다. `git add .`, secret commit, 다른 Task branch 전환과 다른 사람의 history 재작성은 하지 않는다.
+- 현재 Task branch의 configured upstream으로 push한다. upstream이 없고 `origin`이 명확하면 현재 branch에 upstream을 설정해 push할 수 있지만 force push는 하지 않는다.
+- 인증·권한·branch protection·non-fast-forward로 push가 실패하면 임의 merge, rebase 또는 reset으로 우회하지 않는다. local full commit SHA와 원본 오류를 blocker로 남기고 완료 또는 review-ready로 보고하지 않는다.
+- push 성공 뒤 변경, 테스트, 영향 범위, 남은 위험, 롤백 방법, branch, full commit SHA와 pushed remote/ref를 기록하고 review로 넘긴다.
 
 ## 보고
 

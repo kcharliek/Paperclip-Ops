@@ -6,8 +6,8 @@
 2. Goal 채택 시 Operation Control이 Product Steward에게 orchestration Task를 배정하고 깨운다. Product Steward는 Goal을 바탕으로 필수 범위, 선택 Backlog, Exit gate와 위험을 포함한 Milestone 초안을 만들어 사람에게 확인을 요청한다.
 3. 사람은 초안을 확인하거나 변경 사유와 함께 돌려보낸다. 확인하면 Product Steward가 Root Task를 만들고, 돌려보내면 이전 draft를 취소하고 새 orchestration Task에서 수정안을 만든다.
 4. Leaf Task가 끝나면 상위 Node Task 담당자가 확인한다.
-5. Root Task 담당자가 완료 근거를 `docs/milestones/<milestone-id>.md`에 기록해 Git에 commit한다.
-6. Product Steward가 보고서와 commit SHA를 Operation Control에 제출하고, 인증된 Board 사용자가 dashboard에서 직접 최종 확인한다.
+5. Root Task 담당자가 완료 근거를 `docs/milestones/<milestone-id>.md`에 기록해 Git에 commit하고 현재 Task branch를 push한다.
+6. Product Steward가 보고서, commit SHA와 pushed remote ref를 확인해 Operation Control에 제출하고, 인증된 Board 사용자가 dashboard에서 직접 최종 확인한다.
 
 ## 상태와 권한
 
@@ -95,7 +95,7 @@ Milestone 최종 확인이 거절되면 Product Steward가 거절 사유를 Root
 
 ## Milestone 완료 보고
 
-Root 담당 Agent는 Root review 전에 제품 저장소의 `docs/milestones/<milestone-id>.md`를 commit한다. 보고서는 다음만 포함한다.
+Root 담당 Agent는 Root review 전에 제품 저장소의 `docs/milestones/<milestone-id>.md`를 commit하고 현재 Task branch의 remote ref에 push한다. 보고서는 다음만 포함한다.
 
 ```markdown
 # <Milestone title>
@@ -108,7 +108,7 @@ Root 담당 Agent는 Root review 전에 제품 저장소의 `docs/milestones/<mi
 - 롤백: <복구 방법>
 ```
 
-Git Markdown이 원본이다. 보고서가 자기 자신을 포함한 commit SHA를 기록하는 순환 조건은 두지 않는다. Product Steward가 full commit SHA와 보고서 경로를 제출하면 Operation Control은 Paperclip Root execution workspace 또는 Project primary workspace에서 commit 존재, `HEAD` 도달 가능성과 해당 경로 포함 여부를 검증한 뒤 dashboard에 표시한다. Product Steward는 보고서를 직접 작성하거나 제품 workspace를 수정하지 않는다. Board가 거절하면 기존 보고서를 덮어쓰지 않고 보완 commit을 만든 뒤 새 SHA로 다시 요청한다.
+Git Markdown이 원본이다. 보고서가 자기 자신을 포함한 commit SHA를 기록하는 순환 조건은 두지 않는다. Product Steward가 full commit SHA, 보고서 경로와 pushed remote ref를 확인해 제출하면 Operation Control은 Paperclip Root execution workspace 또는 Project primary workspace에서 commit 존재, `HEAD` 도달 가능성과 해당 경로 포함 여부를 검증한 뒤 dashboard에 표시한다. Product Steward는 보고서를 직접 작성하거나 제품 workspace를 수정하지 않는다. Board가 거절하면 기존 보고서를 덮어쓰지 않고 보완 commit을 만들고 같은 branch를 push한 뒤 새 SHA로 다시 요청한다.
 
 Backlog description에는 최소한 다음을 기록한다.
 
@@ -140,8 +140,8 @@ Backlog description에는 최소한 다음을 기록한다.
 
 - 사람: Goal 등록, Milestone 확인·거절, 범위·예산·고위험 결정, 최종 방향.
 - Operation Control: Goal 채택·Milestone 확인·최종 완료 뒤 다음 단계 orchestration Task를 만들고 Product Steward를 깨운다. 이 제어 Task는 제품 delivery tree 밖에 둔다.
-- Product Steward: 배정된 orchestration Task에서 Milestone 초안, Root Task 생성, 실행 Agent 배정, tree 진행 조정, Git 보고서를 Operation Control에 제출한다. 최종 결정을 대신 기록하지 않는다.
+- Product Steward: 배정된 orchestration Task에서 Milestone 초안, Root Task 생성, 실행 Agent 배정, tree 진행 조정, pushed Git 보고서를 Operation Control에 제출한다. 최종 결정을 대신 기록하지 않는다.
 - Node 담당 Agent: child 분해, leaf 실행 확인, Node review 제출, 거절된 Node의 보완 child 생성.
-- 실행 Agent: 할당된 leaf 또는 child 하나를 수행하고 evidence를 남긴다. Root 담당자는 Milestone 완료 보고서를 commit한다. Goal, Milestone 상태와 sibling 범위를 바꾸지 않는다.
+- 실행 Agent: 할당된 leaf 또는 child 하나를 수행하고 evidence를 남긴다. Git workspace를 수정했으면 Task 전용 commit을 현재 Task branch에 push한 뒤 review를 요청한다. Root 담당자는 Milestone 완료 보고서를 commit하고 push한다. Goal, Milestone 상태와 sibling 범위를 바꾸지 않는다.
 
 실행 Agent가 직접 child를 만들 수 없는 Paperclip 권한 구성에서는 Product Steward가 해당 Agent의 분해안을 받아 child 생성만 대행한다. 이 예외는 흐름을 바꾸지 않는다.

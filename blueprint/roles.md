@@ -35,6 +35,7 @@ Ops 시스템 자체를 제품으로 운영하는 Company는 선택형 `System A
 - Leaf 완료는 상위 Node 담당자가 확인하고, Node와 Root 완료는 Operation Control의 `review-node`를 통과해야 한다. 작성자와 reviewer는 달라야 하며 인간은 Milestone만 확인·거절한다.
 - Company가 native `executionPolicy`를 별도로 적용한 고위험 변경은 review 뒤 Board approval stage를 추가한다.
 - shared workspace의 writer 동시 실행은 1이다. 독립 Git history와 isolated workspace가 확인된 경우에만 병렬 writer를 늘린다.
+- Git workspace를 수정한 실행 Role은 검증 뒤 자기 Task 파일만 focused commit으로 만들고 현재 Task branch를 push한다. force push와 다른 사람의 history 재작성은 금지하며, push 실패는 local full SHA와 원본 오류를 blocker로 보고한다.
 - isolated workspace를 사용할 수 없으면 Prototyper는 shared 제품 workspace를 수정하지 않고 Issue Document, attachment 또는 work product로 결과를 남긴다.
 - Role Agent 수는 1..N이지만 같은 writable workspace를 공유하는 실행은 직렬화한다.
 - Company가 `holding` 또는 `maintenance`이면 Maintenance owner가 아닌 Agent는 새 작업을 시작하지 않는다.

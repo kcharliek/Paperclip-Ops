@@ -1,11 +1,11 @@
 # Paperclip Ops Role Snapshot
 
-Paperclip 원본 instructions를 2026-07-16에 다시 읽어 저장한 snapshot이다.
+Paperclip 원본 instructions를 2026-07-17에 다시 읽어 저장소 snapshot과 byte-for-byte 일치를 확인했다.
 
 | Role | Agent ID | 원본 |
 |---|---|---|
-| Ops Steward | `d4feead0-0016-4075-a832-cd7b6a80a4d3` | [AGENTS.md](ops-steward/AGENTS.md) |
-| System Auditor | `5ea8e748-58e2-4489-ad32-955dcd51e943` | [AGENTS.md](system-auditor/AGENTS.md) |
-| Builder | `61b6a42d-f25d-454a-85af-76e1af379f3d` | [AGENTS.md](builder/AGENTS.md) |
-| Sweeper | `e4c241ef-01ed-443d-9009-b03296eceec9` | [AGENTS.md](sweeper/AGENTS.md) |
-| Maintainer | `720bb970-94f2-4dc7-ad1e-d472c65624ff` | [AGENTS.md](maintainer/AGENTS.md) |
+| Ops Steward | `e55a2362-5520-4006-8fbe-17827a6be382` | [AGENTS.md](ops-steward/AGENTS.md) |
+| System Auditor | `177e9782-9b8d-416e-9865-273252eca151` | [AGENTS.md](system-auditor/AGENTS.md) |
+| Builder | `fb595d00-0021-4e2c-88d7-fc3bd329a7a2` | [AGENTS.md](builder/AGENTS.md) |
+| Sweeper | `960a20e4-32e6-49dc-9d8c-4cbab025c595` | [AGENTS.md](sweeper/AGENTS.md) |
+| Maintainer | `16fb2f08-9318-415b-9c46-0ff404810474` | [AGENTS.md](maintainer/AGENTS.md) |
