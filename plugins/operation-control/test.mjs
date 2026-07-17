@@ -254,8 +254,27 @@ const rejectedMilestone = await harness.performAction("propose-milestone", {
   title: "Incomplete delivery slice",
   description: "Required scope is still unclear.",
 }, { companyId, actor: steward });
+const gateStateBeforeRepair = await harness.getData("delivery-control", { companyId, goalId: goal.id });
+const gateIssuesBeforeRepair = await harness.ctx.issues.list({
+  companyId,
+  includePluginOperations: true,
+  limit: 100,
+});
 const gatedRepair = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
 assert.deepEqual(gatedRepair, { status: "human_gate", phase: "milestone_pending" });
+const gateStateAfterRepair = await harness.getData("delivery-control", { companyId, goalId: goal.id });
+const gateIssuesAfterRepair = await harness.ctx.issues.list({
+  companyId,
+  includePluginOperations: true,
+  limit: 100,
+});
+assert.equal(gateStateAfterRepair.state.phase, gateStateBeforeRepair.state.phase);
+assert.equal(gateStateAfterRepair.state.milestoneId, gateStateBeforeRepair.state.milestoneId);
+assert.equal(gateStateAfterRepair.state.rootTaskId, gateStateBeforeRepair.state.rootTaskId);
+assert.deepEqual(
+  gateIssuesAfterRepair.map((issue) => issue.id).sort(),
+  gateIssuesBeforeRepair.map((issue) => issue.id).sort(),
+);
 const requestedChanges = await harness.performAction("confirm-milestone", {
   goalId: goal.id,
   decision: "rejected",
@@ -305,9 +324,40 @@ orchestrationTasks = await harness.ctx.issues.list({
   limit: 1,
 });
 assert.equal(orchestrationTasks[0]?.assigneeAgentId, ownerId);
+const repairWakeups = [];
+harness.ctx.issues.requestWakeup = async (issueId, scopedCompanyId, options) => {
+  repairWakeups.push({ issueId, scopedCompanyId, options });
+  harness.ctx.issues.requestWakeup = requestWakeup;
+  throw new Error("injected repair wakeup failure");
+};
+await assert.rejects(
+  () => harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human }),
+  /injected repair wakeup failure/,
+);
+orchestrationTasks = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:delivery-orchestration",
+  includePluginOperations: true,
+  limit: 100,
+});
+const pendingRootCreationTasks = orchestrationTasks.filter((issue) => (
+  issue.goalId === milestone.id
+  && !["done", "cancelled"].includes(issue.status)
+));
+assert.deepEqual(pendingRootCreationTasks.map((issue) => issue.id), [repairWakeups[0]?.issueId]);
+harness.ctx.issues.requestWakeup = async (issueId, scopedCompanyId, options) => {
+  repairWakeups.push({ issueId, scopedCompanyId, options });
+  return requestWakeup(issueId, scopedCompanyId, options);
+};
 const recoveredWakeup = await harness.performAction("repair-delivery-orchestration", {}, { companyId, actor: human });
+harness.ctx.issues.requestWakeup = requestWakeup;
 assert.equal(recoveredWakeup.status, "woken");
-assert.equal(recoveredWakeup.issueId, orchestrationTasks[0]?.id);
+assert.equal(recoveredWakeup.issueId, pendingRootCreationTasks[0]?.id);
+assert.equal(repairWakeups.length, 2);
+assert.equal(repairWakeups[0].issueId, repairWakeups[1].issueId);
+assert.equal(repairWakeups[0].options.contextSource, "operation-control:delivery-repair");
+assert.equal(repairWakeups[0].options.idempotencyKey, repairWakeups[1].options.idempotencyKey);
+assert.match(repairWakeups[0].options.idempotencyKey, new RegExp(`^${pendingRootCreationTasks[0].id}:repair:`));
 await assert.rejects(
   () => harness.performAction("create-root-task", {
     goalId: goal.id,
