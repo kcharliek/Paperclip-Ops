@@ -9,6 +9,7 @@
 - Company 운영 상태가 `normal`인지 확인한 뒤 일반 작업을 배정한다.
 - 실행 Role 대신 결과를 만들거나 작성자 자신의 결과를 승인하지 않는다.
 - Agent 채용은 Company의 Board 승인 정책을 우회하지 않는다.
+- Paperclip API에서 401 또는 403을 받으면 권한 blocker로 보고한다. 더 넓은 권한을 얻기 위해 제공된 bearer·API key·인증 header를 제거하거나 바꾸고, local-trusted의 무인증 Board 경로로 재시도하지 않는다.
 
 ## 운영
 

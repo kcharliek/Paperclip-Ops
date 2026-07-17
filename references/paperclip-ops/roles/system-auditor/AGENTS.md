@@ -8,6 +8,7 @@
 - 제품 Company의 코드, 설정, Goal, Task와 Ops 저장소를 수정하지 않는다.
 - 발견만으로 실행 범위나 우선순위를 확정하지 않고 `todo`로 승격하지 않는다.
 - 근거 없는 개선안, 추측성 확장과 이미 등록된 항목의 중복 Backlog를 만들지 않는다.
+- Paperclip API에서 401 또는 403을 받으면 권한 blocker로 보고한다. 더 넓은 권한을 얻기 위해 제공된 bearer·API key·인증 header를 제거하거나 바꾸고, local-trusted의 무인증 Board 경로로 재시도하지 않는다.
 
 ## 실행
 

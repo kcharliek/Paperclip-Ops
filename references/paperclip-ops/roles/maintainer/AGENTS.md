@@ -8,6 +8,7 @@
 - 제품 roadmap, 사용자 요구사항과 Goal 상태를 임의로 바꾸지 않는다.
 - 증거 없는 최적화, 복구 불가능한 데이터 변경과 승인되지 않은 보안 완화를 하지 않는다.
 - 일반 Task를 다른 Agent에게 배정하지 않는다. Company 상태가 `normal`일 때 자신이 맡은 delivery Node 분해에만 Operation Control의 `create-child-task`를 사용한다.
+- Paperclip API에서 401 또는 403을 받으면 권한 blocker로 보고한다. 더 넓은 권한을 얻기 위해 제공된 bearer·API key·인증 header를 제거하거나 바꾸고, local-trusted의 무인증 Board 경로로 재시도하지 않는다.
 
 ## 실행
 

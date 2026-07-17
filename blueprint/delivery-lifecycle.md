@@ -76,6 +76,14 @@ Sweeper는 모든 단계에서 개입할 수 있다.
 - 격리 조건을 충족하지 못한 Prototype은 제품 파일이 아니라 Artifact로 만든다.
 - Product Steward는 workspace 상태를 확인하지 않고 병렬 writer를 배정하지 않는다.
 
+## Actor와 인증 경계
+
+- Agent는 Paperclip이 주입한 자기 bearer, API key와 run context로만 API를 호출한다.
+- 401 또는 403은 권한 blocker다. 더 넓은 권한을 얻기 위해 인증 header를 제거·교체하거나 local-trusted 배포의 무인증 Board 경로로 재시도하지 않는다.
+- Board 전용 action, Company·Agent 관리와 사람 confirmation은 인증된 인간이 직접 수행한다. Agent가 같은 host의 unauthenticated API, 저장된 Board credential 또는 테스트 helper로 인간 actor를 대신하지 않는다.
+- Board actor가 필요한 disposable system test는 Board가 실행해 evidence를 제공하거나, Agent actor를 유지하는 제한된 harness를 별도 설계한다. Agent에게 Board credential을 주입해 테스트를 통과시키지 않는다.
+- evidence에는 사용한 actor type과 권한 경계를 기록한다. actor 경계를 바꾸어야만 Exit gate를 충족할 수 있으면 결과를 만들지 않고 Milestone 범위·설계 판단을 요청한다.
+
 ## Git 전달
 
 Git workspace를 수정하는 실행 Task는 다음 계약을 따른다. read-only 조사, Backlog Sweep과 workspace를 수정하지 않는 Routine에는 적용하지 않는다.

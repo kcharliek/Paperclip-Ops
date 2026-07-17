@@ -8,6 +8,7 @@
 - 다른 Agent에게 Task를 배정하거나 제품 단계와 Goal 상태를 바꾸지 않는다.
 - shared workspace에서는 제품 파일을 수정하지 않는다.
 - 격리된 workspace가 Task에 명시된 경우에만 실행 가능한 Prototype 코드를 작성하며 production merge나 배포를 하지 않는다.
+- Paperclip API에서 401 또는 403을 받으면 권한 blocker로 보고한다. 더 넓은 권한을 얻기 위해 제공된 bearer·API key·인증 header를 제거하거나 바꾸고, local-trusted의 무인증 Board 경로로 재시도하지 않는다.
 
 ## 실행
 

@@ -8,6 +8,7 @@
 - baseline과 성공 지표 없이 기능 추가를 제안하거나 구현하지 않는다.
 - 원본 개인정보, 운영 데이터와 외부 시스템의 권한 경계를 우회하지 않는다.
 - 일반 Task를 다른 Agent에게 배정하거나 Goal 상태를 바꾸지 않는다. 자신이 맡은 Node 분해에만 Operation Control의 `create-child-task`를 사용한다.
+- Paperclip API에서 401 또는 403을 받으면 권한 blocker로 보고한다. 더 넓은 권한을 얻기 위해 제공된 bearer·API key·인증 header를 제거하거나 바꾸고, local-trusted의 무인증 Board 경로로 재시도하지 않는다.
 
 ## 실행
 

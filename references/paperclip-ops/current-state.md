@@ -21,7 +21,7 @@
 |---|---|---|---|
 | Ops Steward | `e55a2362-5520-4006-8fbe-17827a6be382` | `ceo` | idle |
 | System Auditor | `177e9782-9b8d-416e-9865-273252eca151` | `researcher` | idle |
-| Builder | `fb595d00-0021-4e2c-88d7-fc3bd329a7a2` | `engineer` | paused, 비용 checkpoint |
+| Builder | `fb595d00-0021-4e2c-88d7-fc3bd329a7a2` | `engineer` | idle |
 | Sweeper | `960a20e4-32e6-49dc-9d8c-4cbab025c595` | `qa` | idle |
 | Maintainer | `16fb2f08-9318-415b-9c46-0ff404810474` | `devops` | idle |
 
@@ -29,18 +29,20 @@
 
 2026-07-17 Ops Steward, Builder, Sweeper와 Maintainer의 live instructions에 Git 전달 계약을 적용했다. Git workspace를 수정한 실행 Role은 필수 검증 뒤 자기 Task 파일만 focused commit으로 만들고 현재 Task branch를 push하며, branch·full SHA·remote/ref를 review 근거로 남긴다. force push와 history 재작성은 금지하고 인증·권한·branch protection·non-fast-forward 오류는 임의 우회 없이 blocker로 보고한다. read-only Integrity Check와 workspace를 수정하지 않는 Backlog Sweep은 commit·push 대상이 아니다.
 
+같은 날 Ops Steward, System Auditor, Builder, Sweeper와 Maintainer의 live instructions에 actor·인증 경계를 추가했다. Agent는 Paperclip이 주입한 자기 bearer, API key와 run context만 사용하고 401/403을 권한 blocker로 보고한다. 인증 header를 제거·교체하거나 local-trusted의 무인증 Board 경로로 인간 actor를 대신하지 않는다. 적용 뒤 다섯 managed `AGENTS.md`와 이 저장소의 current snapshot이 byte-for-byte 일치함을 다시 확인했다.
+
 ## 분류와 운영
 
 - 개선 분류 label: `blueprint`, `plugin`, `local-profile`, `paperclip-gap`, `maintenance`
 - delivery label: `role:system-auditor`, `role:builder`, `role:sweeper`, `role:maintainer`
 - Operation Control: instance `979f4503-0512-4747-b3de-5c098ee3ece1`, version `0.6.2`, `normal`, `drain`, 시간당 20 run, `executing`
-- 현재 run window: 8/20. 6개 성공 metered run과 잘못 선행한 Node 2 및 비용 checkpoint 재개 run의 취소 2건이다.
+- 현재 run window: 4/20. `PAP-19` fresh-session 성공, `PAP-20` 자동 인계 뒤 안전 취소와 live instruction 적용 후의 재개 안전 취소가 포함된다.
 - System Improvement Review: `da9b24ae-29f9-445f-a6e4-642ab4fb2bc5`, System Auditor, 매주 월요일 10:00 KST, 다음 2026-07-20 10:00 KST, `skip_if_active` / `skip_missed`
 - Company Integrity Check: `24f95458-8bee-4260-94f3-04ed8e638dfa`, Maintainer, 6시간마다, 다음 2026-07-17 18:00 KST, `skip_if_active` / `skip_missed`
 
 ## Backlog 이관
 
-`PAP-2..13`은 이전 snapshot의 미해결 drift를 성공 run 이력 없이 새 instance로 이관한 Backlog다. `PAP-15`는 transient plugin worker registration, `PAP-23`은 controlled Root/child 생성 시 Role label을 원자적으로 적용하지 못하는 새 live 발견을 추적한다. 모두 active Root 밖의 `backlog`다.
+`PAP-2..13`은 이전 snapshot의 미해결 drift를 성공 run 이력 없이 새 instance로 이관한 Backlog다. `PAP-15`는 transient plugin worker registration, `PAP-23`은 controlled Root/child 생성 시 Role label을 원자적으로 적용하지 못하는 live 발견을 추적한다. `PAP-24`는 Agent bearer의 401/403 뒤 local-trusted 무인증 Board 경로로 우회할 수 있는 actor 경계 gap과 제한된 test harness 필요성을 추적한다. 모두 active Root 밖의 `backlog`다.
 
 ## 첫 controlled Milestone
 
@@ -51,21 +53,25 @@ Ops Steward의 첫 초안 `2690187a-e939-4bd5-a45c-32864eedf5af`은 단일 Build
 | Task | 상태 | 역할 / blocker | 현재 근거 |
 |---|---|---|---|
 | `PAP-18` | blocked | `role:maintainer` Root | 네 child가 완료될 때까지 first-class blocker 유지 |
-| `PAP-19` | blocked | `role:builder`, blocker 없음 | 격리 설계는 기록했으나 disposable ID를 사전 요구해 중단. 다음 run은 `tests/system/run.mjs`가 runtime에 Company를 만들고 archive하는 경계로 재개 |
-| `PAP-20` | todo | `role:builder`, blocked by `PAP-19` | 누락 orchestration Task 복구 live 검증 |
-| `PAP-21` | todo | `role:builder`, blocked by `PAP-20` | wake 실패, bounded retry, human-gate no-op 검증 |
-| `PAP-22` | todo | `role:builder`, blocked by `PAP-21` | 회귀 테스트와 evidence bundle |
+| `PAP-19` | done | `role:builder`, blocker 없음 | `tests/system/run.mjs`가 runtime에 일회용 Company를 만들고 archive하는 격리 경계, safe-stop 조건과 관측값을 기록 |
+| `PAP-20` | blocked | `role:builder`, `PAP-19` 완료 | Board 전용 recovery action을 Agent actor로 검증할 수 없어 안전 정지. 제한된 harness 또는 Board 제공 evidence 설계 필요 |
+| `PAP-21` | todo | `role:builder`, blocked by `PAP-20` | wake 실패, bounded retry, human-gate no-op 검증 대기 |
+| `PAP-22` | todo | `role:builder`, blocked by `PAP-21` | 회귀 테스트와 evidence bundle 대기 |
 
-Maintainer가 child 생성 응답을 잘못 읽어 native blocker를 누락했고 Node 2가 먼저 시작했다. Board가 Builder를 pause해 active/queued run을 취소하고 native blocker chain과 Role label을 보정했다. Builder는 누적 context 비용을 제한하기 위해 수동 paused 상태이며 Company mode는 `normal`이다.
+Maintainer가 child 생성 응답을 잘못 읽어 native blocker를 누락했고 Node 2가 먼저 시작했다. Board가 Builder를 pause해 active/queued run을 취소하고 native blocker chain과 Role label을 보정했다.
+
+Board가 `PAP-19`의 task session을 reset하고 Builder를 재개하자 run `30551595-187f-4cf3-a5ff-3bae9a4c0b64`이 fresh session으로 성공해 Node를 `done`으로 전환했다. Operation Control은 blocker 해소를 감지해 `PAP-20` run `cff9f7d2-43bb-4ee2-b6d0-11a91ba4a1e1`을 자동 시작했다. 이 자동 인계로 자율 실행 loop는 확인됐다.
+
+`PAP-20`에서 Builder bearer의 Board 전용 API 호출은 403이었고, Agent가 인증을 제거해 local-trusted 무인증 Board 호출로 재시도하려는 시점에 Board가 run을 취소했다. 현재 Ops Company에는 recovery/failure injection이 수행되지 않았고 Git workspace에는 Agent가 만든 변경이 없다. live actor 경계 적용 뒤 resume에서 시작된 run `d630826b-9ffa-4d33-b7be-95d811d1718f`도 즉시 취소하고 `PAP-20`을 다시 `blocked`로 고정했다. Builder는 다시 `idle`이며 Company mode는 `normal`이다.
 
 ## 실행 비용과 검증
 
-6개 성공 run 합계는 input 5,996,848, cached input 5,499,776, output 78,880 tokens다. Maintainer의 분해 run 하나가 input 2,830,358이어서 추가 LLM run을 중단했고 `PAP-2`의 runtime context 정책 gap 근거로 남겼다.
+7개 성공 run 합계는 input 7,105,302, cached input 6,479,232, output 94,443 tokens다. `PAP-19` fresh run은 input 1,108,454, cached input 979,456, output 15,563 tokens였다. Maintainer의 분해 run 하나가 input 2,830,358이어서 run별 context 폭증은 계속 `PAP-2`의 runtime context 정책 gap 근거로 남는다.
 
 2026-07-17 결정적 검증은 다음과 같이 통과했다.
 
 - `plugins/operation-control`: `npm test` → `operation-control: ok`
-- `node tests/system/run.mjs --preflight` → plugin ready
+- `node tests/system/run.mjs --preflight` → plugin ready, 모든 Role instruction의 actor 경계 확인
 - `node tests/system/run.mjs` → maintenance 전이, 수동 pause 보존, Goal adopt와 Board/Agent actor 경계 모두 pass
 
-마지막 system test의 disposable Company `b8e56fcd-4b33-4a8b-8c38-56657006b9a2`는 성공 뒤 archive됐고 test fixture는 남지 않았다.
+마지막 system test의 disposable Company `5c40a45d-a46a-494f-a4bc-11b376d90e9e`는 성공 뒤 archive됐고 test fixture는 남지 않았다.

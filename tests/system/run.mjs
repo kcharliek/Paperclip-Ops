@@ -9,6 +9,16 @@ const baseUrl = (process.env.PAPERCLIP_URL ?? "http://127.0.0.1:3100").replace(/
 const model = process.env.PAPERCLIP_TEST_MODEL ?? "ollama-cloud/gpt-oss:20b";
 const runTimeoutMs = Number(process.env.PAPERCLIP_TEST_TIMEOUT_SEC ?? 60) * 1_000;
 const tokenFailureCeiling = Number(process.env.PAPERCLIP_TEST_TOKEN_CEILING ?? 80_000);
+const roleInstructionFiles = [
+  "product-steward.md",
+  "prototyper.md",
+  "builder.md",
+  "sweeper.md",
+  "grower.md",
+  "maintainer.md",
+  "system-auditor.md",
+];
+const actorBoundaryContract = "local-trusted의 무인증 Board 경로로 재시도하지 않는다";
 const includeLlm = process.argv.includes("--llm");
 const token = process.env.PAPERCLIP_TOKEN;
 const results = [];
@@ -112,6 +122,16 @@ function scenario(name, checks, evidence = {}) {
   return result;
 }
 
+function assertRoleActorBoundary() {
+  for (const file of roleInstructionFiles) {
+    const path = join(process.cwd(), "blueprint", "role-instructions", file);
+    const contents = readFileSync(path, "utf8");
+    if (!contents.includes(actorBoundaryContract)) {
+      throw new Error(`Role instruction is missing the actor boundary contract: ${path}`);
+    }
+  }
+}
+
 async function operationPlugin() {
   const plugins = await api("/api/plugins");
   const plugin = plugins.find((item) => item.pluginKey === "local.operation-control");
@@ -135,6 +155,7 @@ async function operationAction(pluginId, companyId, key, params = {}) {
 }
 
 async function preflight() {
+  assertRoleActorBoundary();
   const plugin = await operationPlugin();
   let permission;
   if (includeLlm) {
@@ -158,6 +179,7 @@ async function preflight() {
   }
   return {
     plugin,
+    roleActorBoundary: true,
     includeLlm,
     ...(includeLlm ? { model, builderPolicy: Boolean(builderPolicy), permission, limits: { meteredRuns: 1, tokenFailureCeiling, timeoutMs: runTimeoutMs } } : {}),
   };

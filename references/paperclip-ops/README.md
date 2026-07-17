@@ -9,7 +9,8 @@
 - Operation Control: `normal`, 시간당 run 20회, `executing`
 - Routine: `System Improvement Review` 주 1회, `Company Integrity Check` 6시간마다
 - Git 전달: 검증 뒤 Task 전용 commit과 현재 branch push를 실행 Role이 직접 완료하고 branch·full SHA·remote/ref를 근거로 남김
+- Actor 경계: Agent는 주입된 자기 인증만 사용하며 401/403 뒤 local-trusted 무인증 Board 경로로 재시도하지 않음
 
-이전 instance의 성공 run은 복제하지 않았다. `PAP-1`은 재구성 기준점이고 `PAP-2..13`, `PAP-15`, `PAP-23`이 미해결 Backlog를 추적한다. Board가 수정 Milestone `49fc84cb-d42c-496d-96e9-82d7fbb9324d`를 확인해 Root `PAP-18`과 순차 Node `PAP-19..22`를 시작했다. 현재 `PAP-19`는 disposable system-test 경계를 다음 run에 적용하기 위한 비용 checkpoint이며 Builder는 수동 paused다. 상세 ID, 검증과 남은 차이는 [current-state](current-state.md)와 [drift](drift.md)에 있다.
+이전 instance의 성공 run은 복제하지 않았다. `PAP-1`은 재구성 기준점이고 `PAP-2..13`, `PAP-15`, `PAP-23..24`가 미해결 Backlog를 추적한다. Board가 수정 Milestone `49fc84cb-d42c-496d-96e9-82d7fbb9324d`를 확인해 Root `PAP-18`과 순차 Node `PAP-19..22`를 시작했다. `PAP-19` 완료에서 `PAP-20` 자동 시작까지 자율 인계가 확인됐고, 현재 `PAP-20`은 Board actor 경계 재설계 전까지 blocked이며 Builder는 idle이다. 상세 ID, 검증과 남은 차이는 [current-state](current-state.md)와 [drift](drift.md)에 있다.
 
 `roles/*/AGENTS.md`는 적용 뒤 Paperclip 원본과 byte-for-byte 일치를 다시 확인한 current snapshot이다. 목표 계약은 `blueprint/role-instructions/*`와 [Ops Company 설계](../../docs/ops-company.md)에서 관리한다.
