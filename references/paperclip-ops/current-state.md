@@ -6,23 +6,26 @@
 
 | 항목 | 값 |
 |---|---|
-| Company / ID | Paperclip Ops / `94fa4eb9-df28-455d-8c9a-eb5bd6287356` |
-| 상태 / prefix | active / `PAP` |
-| Company Goal | `687f9b61-1cfc-4215-a58e-1258cd4e710e`, active |
-| Project | `73777e76-01dd-459f-a527-a3547fe44f36`, in_progress, lead Ops Steward |
-| primary workspace | `262745da-14a7-4bec-8c8c-06ef26ab0254`, `/Users/chanheekim/Dev/Paperclip-Ops`, shared workspace |
+| Company / ID | Paperclip Ops / `adb591e0-eae2-41f5-8d4e-9b8a5054b60f` |
+| 상태 / prefix / issue counter | active / `PAP` / `0` |
+| Company Goal | `b5f0b530-e571-4781-aba7-766c07b92d9e`, active |
+| Project | `08de096f-20ea-48d7-830f-c71351fb2c5b`, in_progress, lead Ops Steward |
+| primary workspace | `8632080d-4ffb-4a55-b103-c7a44e9dda03`, `/Users/chanheekim/Dev/Paperclip-Ops`, shared workspace |
+| Task | 0개, plugin operation 포함 0개 |
+
+구 Company와 Task 이력은 삭제했고 같은 이름과 prefix로 새 Company를 구성했다. 제품 저장소와 Git 이력은 삭제 대상에 포함하지 않았다. 현재 Company에는 과거 Task, Milestone, Backlog와 Routine execution이 없다.
 
 ## 조직
 
 | Agent | ID | Paperclip role | 상태 |
 |---|---|---|---|
-| Ops Steward | `e55a2362-5520-4006-8fbe-17827a6be382` | `ceo` | idle |
-| System Auditor | `177e9782-9b8d-416e-9865-273252eca151` | `researcher` | idle |
-| Builder | `fb595d00-0021-4e2c-88d7-fc3bd329a7a2` | `engineer` | idle |
-| Sweeper | `960a20e4-32e6-49dc-9d8c-4cbab025c595` | `qa` | idle |
-| Maintainer | `16fb2f08-9318-415b-9c46-0ff404810474` | `devops` | idle |
+| Ops Steward | `446f7fad-ba71-49c3-acb2-be87b702eec1` | `ceo` | idle |
+| System Auditor | `e11ce0c6-0a88-4cc6-9866-725892a013a3` | `researcher` | idle |
+| Builder | `62465e48-c6d4-4f53-bbbe-42f1f969b04c` | `engineer` | idle |
+| Sweeper | `c466b861-0013-483e-bbcb-80a71496687e` | `qa` | idle |
+| Maintainer | `0e34359b-a6f2-4f67-bc0e-d166257725bc` | `devops` | idle |
 
-실행 Agent 네 명은 Ops Steward에게 직접 보고하며 org chain은 healthy다. Product Steward는 Goal을 직접 구현하지 않고 native Task로 분해한다. Builder와 Maintainer가 실행하고, 기본 독립 reviewer인 Sweeper가 원래 Task의 native review stage에서 승인하거나 같은 Task를 수정 상태로 되돌린다. Role은 고정 순차 phase가 아니라 필요한 전문성이다.
+실행 Agent 네 명은 Ops Steward에게 직접 보고한다. Ops Steward만 `canAssignTasks: true`이고 Agent·Skill 생성 권한은 모든 Role에서 꺼져 있다. Product Steward는 Goal을 직접 구현하지 않고 native Task로 분해한다. Builder와 Maintainer가 실행하고, 기본 독립 reviewer인 Sweeper가 원래 Task의 native review stage에서 승인하거나 같은 Task를 수정 상태로 되돌린다. Role은 고정 순차 phase가 아니라 필요한 전문성이다.
 
 다섯 live `AGENTS.md`에는 다음 자율 실행 계약이 적용되어 있다.
 
@@ -32,7 +35,7 @@
 - Agent는 주입된 자기 인증만 사용하며 401/403 뒤 Board 권한으로 우회하지 않는다.
 - shared workspace writer는 한 번에 한 명만 실행하고, Git 변경은 focused commit과 결정적 검증을 남긴다.
 
-적용 뒤 Blueprint, current snapshot과 Paperclip 원본 instruction의 byte-for-byte 일치를 다시 확인했다.
+모든 Agent는 `codex_local`, `gpt-5.5`, on-demand heartbeat, timeout 3600초로 설정했다. 적용 뒤 Blueprint, current snapshot과 Paperclip 원본 instruction의 byte-for-byte 일치를 다시 확인했다.
 
 ## Operation Control 1.0
 
@@ -46,37 +49,28 @@
 | Goal dispatch | `autoDispatchGoals: true` |
 | delivery owner | `paperclip-native` |
 
-Plugin은 이제 maintenance mode, 시간당 run cap과 Goal당 하나의 idempotent dispatch Task만 소유한다. Agent tool은 read-only `inspect-operation-state` 하나뿐이다. custom Milestone phase, Root/child 생성 tool, recovery Task, review bridge, Git Milestone report와 Board evidence relay는 제거했다.
+Plugin은 maintenance mode, 시간당 run cap과 Goal당 하나의 idempotent dispatch Task만 소유한다. Agent tool은 read-only `inspect-operation-state` 하나뿐이다. custom Milestone phase, Root/child 생성 tool, recovery Task, review bridge, Git Milestone report와 Board evidence relay는 복원하지 않았다.
 
-새로 생성되거나 재개된 Company Goal은 `plugin:local.operation-control:goal-dispatch` origin의 Task 하나로 Ops Steward에게 전달된다. 1.0 전환 이전부터 active였던 현재 장기 Goal은 자동 재생하지 않아 dispatch Task가 없다. 기능 계약은 일회용 Company에서 검증했으며, 다음 유한 Goal부터 live native delivery를 관측한다.
+현재 장기 Goal은 재구성 중 `autoDispatchGoals: false`인 상태에서 만들고, 구성이 끝난 뒤 자동 dispatch를 켰다. 따라서 현재 Goal에는 dispatch Task가 없고, 새로 생성하거나 재개된 Company Goal부터 `plugin:local.operation-control:goal-dispatch` origin Task 하나가 Ops Steward에게 전달된다.
 
-## Routine
+## Routine과 공통 자원
 
-- System Improvement Review: `da9b24ae-29f9-445f-a6e4-642ab4fb2bc5`, revision 2, 매주 월요일 10:00 KST, `skip_if_active` / `skip_missed`
-- Company Integrity Check: `24f95458-8bee-4260-94f3-04ed8e638dfa`, revision 3, 6시간마다, `skip_if_active` / `skip_missed`
+- System Improvement Review: `0ce25bce-468e-4eee-a10b-e665fc5b1e96`, revision 2, trigger `4f2668e0-5b43-4c48-a36f-5f9935a7a0a4`, 매주 월요일 10:00 KST
+- Company Integrity Check: `fecdb35c-c63b-441a-bb1d-14fa3dec0e74`, revision 2, trigger `719a0d25-a872-4740-aba8-0a1f4ddab50b`, 6시간마다
+- 두 Routine 모두 `active`, `skip_if_active`, `skip_missed`이며 아직 실행 이력이 없다.
+- Label 9개와 Paperclip bundled Skill 5개를 새 Company에 동기화했다.
 
-Integrity revision 3은 native Goal dispatch의 중복과 코드·사용자 산출물 Task의 native review policy를 read-only로 확인한다. 전환 중 기존 Routine execution `PAP-27`을 취소했으므로 마지막 routine run은 failed로 기록되어 있고, 다음 schedule에서 새 계약의 첫 실제 결과를 확인해야 한다.
-
-## 마이그레이션 이력
-
-이전 custom delivery의 수정 Milestone `49fc84cb-d42c-496d-96e9-82d7fbb9324d`은 `achieved`로 종료했다. Root `PAP-18`과 child `PAP-19..22`, blocker triage `PAP-25..26`은 `done`이다. 구버전 acceptance가 만든 다음 Milestone 계획 `PAP-28`과 당시 실행 중이던 Routine `PAP-27`은 전환 과정에서 `cancelled`로 정리했다.
-
-새 구조와 전제가 충돌하는 Backlog도 다음과 같이 취소했다.
-
-- `PAP-4`: custom delivery recovery 검증
-- `PAP-5`: controlled Root/Node 전환
-- `PAP-7`: custom state machine write-veto
-- `PAP-13`: human-gated 첫 controlled delivery
-- `PAP-23`: custom Root/child Role label 적용
-
-usage/context ceiling, backup/restore, plugin upgrade, trusted-local sandbox, actor 경계와 worker lifecycle처럼 새 구조에서도 유효한 Backlog는 유지한다.
+Integrity 계약은 Company health와 backup, Operation Control 상태와 run cap, org chain, Routine schedule, stalled heartbeat, Goal dispatch 중복과 native review policy를 read-only로 확인한다. System Improvement Review는 근거가 있는 새 결함만 최대 3개까지 분류하고 자동 보정하지 않는다.
 
 ## 검증
 
-2026-07-17 결정적 검증은 다음 계약을 통과했다.
+2026-07-17 현재 다음 계약을 확인했다.
 
-- `plugins/operation-control`: `npm test` → `operation-control: ok`
-- `node tests/system/run.mjs --preflight` → plugin `1.0.0`, Role 자율 실행·actor 경계 확인
-- `node tests/system/run.mjs` → maintenance와 수동 pause 보존, Goal dispatch 단일성, native Agent review, Agent review 뒤 user approval의 15개 check 통과
+- 구 Company API는 `404`, 새 Company API는 `active`, issue counter와 Task 수는 모두 `0`
+- Operation Control data는 `normal`, `paperclip-native`, `autoDispatchGoals: true`, run budget `0/20`
+- 다섯 Agent가 모두 `idle`이고 보고선, 권한, adapter와 heartbeat 설정이 목표값과 일치
+- 다섯 live instruction bundle이 대응 `blueprint/role-instructions/*`와 byte-for-byte 일치
+- Project primary workspace와 shared workspace policy, Routine trigger, Label 9개, bundled Skill 5개 확인
+- `plugins/operation-control` 단위 테스트와 `tests/system/run.mjs`의 결정적 native autonomy 계약 통과
 
-마지막 system test의 disposable Company `c2ffb160-1a10-4fa8-89d0-f86a3c8dd686`는 성공 뒤 archive됐다. 기본 system test는 실제 LLM run을 시작하지 않고 Paperclip API와 native execution state만 검증한다.
+결정적 system test는 실제 LLM run을 시작하지 않고 일회용 Company에서 maintenance, 수동 pause 보존, Goal dispatch 단일성, native Agent review와 고위험 human approval 순서를 검증한다.

@@ -4,8 +4,8 @@ Operation Control 1.0.0 적용 뒤 Paperclip 원본 instructions를 2026-07-17�
 
 | Role | Agent ID | 원본 |
 |---|---|---|
-| Ops Steward | `e55a2362-5520-4006-8fbe-17827a6be382` | [AGENTS.md](ops-steward/AGENTS.md) |
-| System Auditor | `177e9782-9b8d-416e-9865-273252eca151` | [AGENTS.md](system-auditor/AGENTS.md) |
-| Builder | `fb595d00-0021-4e2c-88d7-fc3bd329a7a2` | [AGENTS.md](builder/AGENTS.md) |
-| Sweeper | `960a20e4-32e6-49dc-9d8c-4cbab025c595` | [AGENTS.md](sweeper/AGENTS.md) |
-| Maintainer | `16fb2f08-9318-415b-9c46-0ff404810474` | [AGENTS.md](maintainer/AGENTS.md) |
+| Ops Steward | `446f7fad-ba71-49c3-acb2-be87b702eec1` | [AGENTS.md](ops-steward/AGENTS.md) |
+| System Auditor | `e11ce0c6-0a88-4cc6-9866-725892a013a3` | [AGENTS.md](system-auditor/AGENTS.md) |
+| Builder | `62465e48-c6d4-4f53-bbbe-42f1f969b04c` | [AGENTS.md](builder/AGENTS.md) |
+| Sweeper | `c466b861-0013-483e-bbcb-80a71496687e` | [AGENTS.md](sweeper/AGENTS.md) |
+| Maintainer | `0e34359b-a6f2-4f67-bc0e-d166257725bc` | [AGENTS.md](maintainer/AGENTS.md) |
