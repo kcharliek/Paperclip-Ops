@@ -41,6 +41,8 @@ System Improvement Review는 주 1회와 incident 후 on-demand로 실행한다.
 
 Company Integrity Check는 6시간마다 알려진 운영 계약만 검사하고, System Improvement Review는 주 1회 아직 규칙으로 포착되지 않은 문제만 찾는다. 두 Routine 모두 이상을 직접 수정하지 않는다.
 
+확인된 delivery Node가 human·actor·permission 경계에서 blocked되면 active tree는 그대로 멈추되 Company 전체를 멈추지 않는다. Operation Control이 Product Steward에게 active tree 밖의 blocker triage Task를 한 episode당 하나만 배정하고, System Auditor와 Sweeper의 read-only Routine은 계속한다. Board 전용 검증은 Board가 일회용 Company에서 evidence를 만들고 Builder·Maintainer가 그 evidence만 검토한다. 범위나 Exit gate 변경은 새 Milestone 확인 없이는 실행하지 않는다.
+
 ## Backlog 분류
 
 | Label | 의미 |

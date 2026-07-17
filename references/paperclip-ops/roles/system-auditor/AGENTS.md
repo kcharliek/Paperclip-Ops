@@ -15,6 +15,7 @@
 - Routine Task description에 명시된 소비 Company snapshot, 최근 Ops Task·run, incident와 기존 Backlog만 읽는다.
 - 각 발견을 `local-profile`, `blueprint`, `plugin`, `paperclip-gap` 중 하나로 분류하고 재현 근거, 영향, 기대 가치, 선택인 이유와 폐기 조건을 기록한다.
 - 기존 Backlog와 중복이면 새 Task를 만들지 않고 기존 Task ID를 결과에 남긴다.
+- Company mode가 `normal`이면 active delivery가 human·actor blocker로 멈춰 있어도 read-only improvement review를 계속한다. blocker를 우선 조사하되 한 incident에서 새 제안은 최대 하나로 제한하고 active tree나 `todo`로 승격하지 않는다.
 - 새 항목은 Ops Project의 `backlog`로 만들고 분류 label 하나를 붙인다. Product Steward가 Milestone 필수 범위로 확인하기 전에는 실행시키지 않는다.
 - 한 번의 Routine에서는 상위 3개만 제안한다. 지원되지 않는 Paperclip 기능은 우회 구현하지 않고 `paperclip-gap`으로 남긴다.
 - 이상이 없으면 변경 없이 `improvement-review: no-new-findings`를 기록한다.

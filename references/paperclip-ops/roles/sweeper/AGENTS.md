@@ -21,6 +21,7 @@
 - `Backlog Sweep` Task에서는 제품 workspace를 수정하지 않고 최대 10개의 Backlog만 확인한다.
 - `Backlog Sweep`은 Routine Task description의 Operation Control 조회 경로를 그대로 사용하고 호출법을 찾기 위해 filesystem, server source, log 또는 과거 session을 검색하지 않는다.
 - `Backlog Sweep` 변경 전 Company 운영 상태가 `normal`인지 확인하고 아니면 상태를 바꾸지 않는다.
+- Company mode가 `normal`이면 active delivery의 human·actor blocker만으로 read-only Backlog Sweep을 중단하지 않는다. blocker 관련 항목을 우선 중복 확인하되 active tree 편입이나 `todo` 승격은 하지 않는다.
 - 명백한 중복, `done`으로 완료된 결과 또는 충족된 폐기 조건만 근거를 댓글로 남긴 뒤 `cancelled`로 바꾼다. planned·active Milestone이나 미완료 Task는 이미 반영된 결과가 아니다.
 - 선택 여부나 폐기 조건이 불명확하면 상태를 바꾸지 않고 Product Steward에게 분류를 요청한다.
 - Backlog Task 쓰기가 권한 경계에 막히면 취소로 집계하지 않고 Product Steward 분류 요청으로 기록한다. Routine Task 자체를 `blocked`로 바꾸지 않는다.

@@ -33,7 +33,9 @@ const ACTIVE_DELIVERY_GOAL_KEY = "active-delivery-goal-id";
 const DELIVERY_NODE_KEY = "delivery-node";
 const DELIVERY_NODE_REJECTION_COUNT_KEY = "delivery-node-rejection-count";
 const DELIVERY_MILESTONE_KEY = "delivery-milestone";
+const DELIVERY_BLOCKER_TRIAGE_KEY = "delivery-blocker-triage";
 const ORCHESTRATION_ORIGIN = "plugin:local.operation-control:delivery-orchestration" as const;
+const BLOCKER_TRIAGE_ORIGIN = "plugin:local.operation-control:delivery-blocker-triage" as const;
 
 type DeliveryPhase =
   | "goal_registered"
@@ -76,6 +78,12 @@ interface HourlyRunBudget {
   count: number;
 }
 
+interface BlockerTriageMarker {
+  version: 1;
+  active: boolean;
+  episode: number;
+}
+
 const normalState = (): OperationState => ({
   version: 1,
   mode: "normal",
@@ -112,6 +120,10 @@ function deliveryNodeKey(issueId: string) {
 
 function deliveryNodeRejectionCountKey(issueId: string) {
   return { scopeKind: "issue" as const, scopeId: issueId, stateKey: DELIVERY_NODE_REJECTION_COUNT_KEY };
+}
+
+function deliveryBlockerTriageKey(issueId: string) {
+  return { scopeKind: "issue" as const, scopeId: issueId, stateKey: DELIVERY_BLOCKER_TRIAGE_KEY };
 }
 
 function deliveryMilestoneKey(goalId: string) {
@@ -209,6 +221,16 @@ function readCompanyId(params: Record<string, unknown>, fallback?: string | null
   const companyId = fallback ?? params.companyId;
   if (typeof companyId !== "string" || !companyId) throw new Error("companyId is required");
   return companyId;
+}
+
+function isBlockerTriageMarker(value: unknown): value is BlockerTriageMarker {
+  if (!value || typeof value !== "object") return false;
+  const marker = value as Partial<BlockerTriageMarker>;
+  return marker.version === 1
+    && typeof marker.active === "boolean"
+    && typeof marker.episode === "number"
+    && Number.isInteger(marker.episode)
+    && marker.episode >= 0;
 }
 
 function isOperationState(value: unknown): value is OperationState {
@@ -475,6 +497,62 @@ export function createOperationPlugin() {
           actorUserId,
         });
         return { status: "created", phase: state.phase, issueId: issue.id };
+      };
+
+      const reconcileBlockedDeliveryTriage = async (
+        companyId: string,
+        issue: Issue,
+        tracked: { state: DeliveryState; node: DeliveryNode },
+        allowCreate: boolean,
+      ): Promise<Issue | null> => {
+        const markerKey = deliveryBlockerTriageKey(issue.id);
+        const savedValue = await ctx.state.get(markerKey);
+        const saved = isBlockerTriageMarker(savedValue)
+          ? savedValue
+          : { version: 1 as const, active: false, episode: 0 };
+
+        if (issue.status !== "blocked") {
+          if (saved.active) await ctx.state.set(markerKey, { ...saved, active: false });
+          return null;
+        }
+        if (!allowCreate || saved.active || tracked.state.phase !== "executing") return null;
+
+        const relations = await ctx.issues.relations.get(issue.id, companyId);
+        if (relations.blockedBy.some((blocker) => !isTerminal(blocker))) return null;
+
+        const orchestrator = await resolveOrchestrator(companyId, tracked.state.orchestratorAgentId);
+        const episode = saved.episode + 1;
+        const originId = `${issue.id}:episode:${episode}`;
+        const existing = await ctx.issues.list({
+          companyId,
+          originKind: BLOCKER_TRIAGE_ORIGIN,
+          originId,
+          includePluginOperations: true,
+          limit: 1,
+        });
+        const triage = existing[0] ?? await ctx.issues.create({
+          companyId,
+          goalId: tracked.state.goalId,
+          title: `Triage blocked delivery Task ${issue.identifier}`,
+          description: `Delivery Task ${issue.identifier} is blocked without an unfinished Task dependency. Keep the confirmed Milestone and active Task tree unchanged. Read the blocker evidence and distinguish an Agent-actionable failure from a human, actor, permission, scope or Exit-gate decision. Do not modify the product workspace, remove or replace authentication, invoke Board-only actions, promote Backlog, or mark the blocked Task todo. If the blocker is solvable inside the confirmed scope and current Agent actor, record a safe resume recommendation. Otherwise create or update one deduplicated Backlog Candidate outside the active tree and request the exact Board evidence or decision required. Read-only System Improvement Review or Backlog Sweep may continue while the delivery Task remains blocked. Record the result on this triage Task and mark only this Task done.`,
+          status: "todo",
+          priority: "high",
+          assigneeAgentId: orchestrator.id,
+          originKind: BLOCKER_TRIAGE_ORIGIN,
+          originId,
+        });
+        await ctx.state.set(markerKey, { version: 1, active: true, episode });
+        await ctx.issues.requestWakeup(triage.id, companyId, {
+          reason: `Triage blocked delivery Task ${issue.identifier}`,
+          contextSource: "operation-control:delivery-blocker-triage",
+          idempotencyKey: `${originId}:wakeup`,
+        });
+        await ctx.issues.createComment(
+          issue.id,
+          `Workflow fallback: ${triage.identifier}에서 active tree와 확인된 Milestone을 바꾸지 않고 blocker를 분류합니다. 이 Task는 Board evidence 또는 안전한 Agent 경로가 확인될 때까지 blocked 상태를 유지합니다.`,
+          companyId,
+        );
+        return triage;
       };
 
       const createChildTask = async (
@@ -1147,13 +1225,14 @@ export function createOperationPlugin() {
       };
 
       const handleIssueUpdated = async (event: PluginEvent) => {
-        if (event.actorType === "plugin") return;
         const issueId = event.entityId ?? ((event.payload as Record<string, unknown> | null)?.issueId as string | undefined);
         if (!issueId) return;
         const issue = await ctx.issues.get(issueId, event.companyId);
-        if (!issue || issue.status !== "done") return;
+        if (!issue) return;
         const tracked = await getIssueDelivery(event.companyId, issue);
         if (!tracked || tracked.state.phase === "completed") return;
+        await reconcileBlockedDeliveryTriage(event.companyId, issue, tracked, event.actorType !== "plugin");
+        if (event.actorType === "plugin" || issue.status !== "done") return;
         if (!(await directChildren(issue.id, event.companyId)).length) return;
         await ctx.issues.update(issue.id, { status: "in_review" }, event.companyId);
         await ctx.issues.createComment(issue.id, "Workflow guard: child가 있는 Node/Root Task는 parent owner review를 거쳐야 완료됩니다.", event.companyId);

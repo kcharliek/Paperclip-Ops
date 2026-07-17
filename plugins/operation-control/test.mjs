@@ -322,6 +322,64 @@ const root = await harness.performAction("create-root-task", {
   title: "Delivery root",
   assigneeAgentId: workerId,
 }, { companyId, actor: steward });
+await harness.ctx.issues.update(root.id, { status: "blocked" }, companyId, { actorAgentId: workerId });
+await harness.emit("issue.updated", { issueId: root.id }, {
+  companyId,
+  entityId: root.id,
+  entityType: "issue",
+  actorType: "agent",
+  actorId: workerId,
+});
+let blockerTriage = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:delivery-blocker-triage",
+  originId: `${root.id}:episode:1`,
+  includePluginOperations: true,
+  limit: 10,
+});
+assert.equal(blockerTriage.length, 1);
+assert.equal(blockerTriage[0].parentId, null);
+assert.equal(blockerTriage[0].goalId, goal.id);
+assert.equal(blockerTriage[0].assigneeAgentId, ownerId);
+assert.match(blockerTriage[0].description ?? "", /active Task tree unchanged/);
+assert.match(blockerTriage[0].description ?? "", /Do not modify the product workspace/);
+await harness.emit("issue.updated", { issueId: root.id }, {
+  companyId,
+  entityId: root.id,
+  entityType: "issue",
+  actorType: "agent",
+  actorId: workerId,
+});
+blockerTriage = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:delivery-blocker-triage",
+  includePluginOperations: true,
+  limit: 10,
+});
+assert.equal(blockerTriage.filter((issue) => issue.originId?.startsWith(root.id)).length, 1);
+await harness.ctx.issues.update(root.id, { status: "todo" }, companyId);
+await harness.emit("issue.updated", { issueId: root.id }, {
+  companyId,
+  entityId: root.id,
+  entityType: "issue",
+  actorType: "plugin",
+  actorId: null,
+});
+await harness.ctx.issues.update(root.id, { status: "blocked" }, companyId, { actorAgentId: workerId });
+await harness.emit("issue.updated", { issueId: root.id }, {
+  companyId,
+  entityId: root.id,
+  entityType: "issue",
+  actorType: "agent",
+  actorId: workerId,
+});
+blockerTriage = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:delivery-blocker-triage",
+  includePluginOperations: true,
+  limit: 10,
+});
+assert.equal(blockerTriage.filter((issue) => issue.originId?.startsWith(root.id)).length, 2);
 await harness.ctx.issues.update(root.id, { status: "backlog" }, companyId, { actorAgentId: ownerId });
 await assert.rejects(
   () => harness.performAction("create-child-task", {
@@ -353,6 +411,22 @@ const childTwo = await harness.performAction("create-child-task", {
 }, { companyId, actor: builder });
 assert.equal(childTwo.parentId, root.id);
 assert.deepEqual((await harness.ctx.issues.relations.get(childTwo.id, companyId)).blockedBy.map((item) => item.id), [childOne.id]);
+await harness.ctx.issues.update(childTwo.id, { status: "blocked" }, companyId, { actorAgentId: reviewerId });
+await harness.emit("issue.updated", { issueId: childTwo.id }, {
+  companyId,
+  entityId: childTwo.id,
+  entityType: "issue",
+  actorType: "agent",
+  actorId: reviewerId,
+});
+const dependencyTriage = await harness.ctx.issues.list({
+  companyId,
+  originKind: "plugin:local.operation-control:delivery-blocker-triage",
+  originId: `${childTwo.id}:episode:1`,
+  includePluginOperations: true,
+  limit: 1,
+});
+assert.equal(dependencyTriage.length, 0);
 await assert.rejects(
   () => harness.performAction("review-node", {
     issueId: root.id,

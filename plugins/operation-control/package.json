@@ -1,6 +1,6 @@
 {
   "name": "paperclip-plugin-operation-control",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
   "type": "module",
   "description": "Gracefully drain or immediately pause Paperclip agents for maintenance windows.",

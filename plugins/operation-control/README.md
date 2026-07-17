@@ -33,6 +33,8 @@ The plugin exposes a controlled path:
 
 Agents receive only `propose-milestone`, `create-root-task`, `create-child-task`, `review-node`, and `request-milestone-review`. Keep worker Agents' normal task-assignment permission disabled; these plugin tools are the narrow delivery path.
 
+When a tracked delivery Task is `blocked` without an unfinished Task dependency, the worker creates one outside-tree Product Steward triage Task for that blocking episode. Repeated updates do not duplicate triage, a non-blocked transition resets the episode, and ordinary sibling dependency waits do not trigger it. Triage is read-only with respect to the product workspace, confirmed Milestone and active tree; it may record a safe resume condition, a deduplicated Backlog Candidate, or an exact Board evidence request.
+
 The current Paperclip plugin SDK cannot read a resolved interaction or mutate an Issue's native execution policy. The plugin therefore enforces Node/Root review through its own tools and uses a direct, authenticated Board action for the final Milestone gate instead of trusting an Agent to relay a human response.
 
 Configure the workflow owner and run ceiling through the plugin instance configuration, for example `{ "orchestratorRole": "ceo", "maxRunsPerHour": 20 }`. The plugin does not infer an owner from an Agent name or a hardcoded role.

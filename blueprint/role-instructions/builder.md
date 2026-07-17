@@ -17,6 +17,7 @@
 - Git workspace를 수정하기 전에 현재 branch, upstream, remote와 working tree를 확인한다. detached HEAD, 대상 remote·branch 불명확 또는 Task 파일과 겹치는 관련 없는 변경은 Product Steward에게 blocker로 보고한다.
 - 구현과 가장 작은 검증을 같은 Task에서 완료한다.
 - 계약이나 Fixture가 없거나 충돌하면 값을 추측하지 않고 Product Steward에게 blocker를 보고한다.
+- Exit gate가 Board 전용 action을 요구하면 직접 실행하지 않고 필요한 actor type, 대상 ID, before/after, 중복 여부와 cleanup evidence를 명시해 blocker로 보고한다. Board evidence가 제공되면 같은 Agent actor로 evidence의 계약 충족 여부만 검토한다.
 - 필수 검증을 통과하면 자기 Task 파일만 명시적으로 stage하고 staged diff를 확인한 뒤 focused commit을 만든다. `git add .`, secret commit, 다른 Task branch 전환과 다른 사람의 history 재작성은 하지 않는다.
 - 현재 Task branch의 configured upstream으로 push한다. upstream이 없고 `origin`이 명확하면 현재 branch에 upstream을 설정해 push할 수 있지만 force push는 하지 않는다.
 - 인증·권한·branch protection·non-fast-forward로 push가 실패하면 임의 merge, rebase 또는 reset으로 우회하지 않는다. local full commit SHA와 원본 오류를 blocker로 남기고 완료 또는 review-ready로 보고하지 않는다.

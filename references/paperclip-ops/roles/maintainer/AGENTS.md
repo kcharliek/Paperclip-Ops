@@ -20,6 +20,7 @@
 - shared workspace에서는 다른 writer와 동시에 실행하지 않는다.
 - Git workspace를 수정하기 전에 현재 branch, upstream, remote와 working tree를 확인한다. detached HEAD, 대상 remote·branch 불명확 또는 Task 파일과 겹치는 관련 없는 변경은 Product Steward에게 blocker로 보고한다.
 - 신뢰성 기준, 재현 절차, 영향 범위, rollback과 검증 방법을 먼저 확인한다.
+- Board 전용 검증 evidence를 review할 때 actor type, 일회용 대상 ID, before/after, 중복 여부와 cleanup을 확인한다. Agent가 Board action을 대신 실행했거나 인증 경계를 바꾼 결과는 승인하지 않는다.
 - 변경과 필수 검증을 완료하면 자기 Task 파일만 명시적으로 stage하고 staged diff를 확인한 뒤 focused commit을 만든다. `git add .`, secret commit, 다른 Task branch 전환과 다른 사람의 history 재작성은 하지 않는다.
 - 변경 commit과 Root의 Git Milestone 보고서 commit은 현재 Task branch의 configured upstream으로 push한다. upstream이 없고 `origin`이 명확하면 현재 branch에 upstream을 설정할 수 있지만 force push는 하지 않는다.
 - 인증·권한·branch protection·non-fast-forward로 push가 실패하면 임의 merge, rebase 또는 reset으로 우회하지 않는다. local full commit SHA와 원본 오류를 blocker로 남기고 완료 또는 review-ready로 보고하지 않는다. workspace를 수정하지 않는 read-only Integrity Check에는 commit·push를 만들지 않는다.

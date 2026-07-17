@@ -45,6 +45,14 @@ Product Steward만 Backlog를 `todo`로 승격하고 적절한 부모, Role, 담
 - Leaf에는 기본 Reviewer를 두지 않는다. 상위 Node 담당자가 leaf 산출물, 검증 결과와 완료 기준을 확인한다.
 - Node 담당자가 해당 child의 작성자이기도 하면 자기 결과를 승인하지 않고 별도 reviewer를 둔다.
 
+## Human evidence와 blocked-work fallback
+
+- Board 전용 action은 Agent Task의 실행 단계가 아니다. Milestone에 Board 전용 검증이 필요하면 Board evidence gate와 Agent verification Node를 분리한다.
+- Board evidence에는 actor type, 일회용 Company·Goal·Task ID, before/after 상태, 중복 생성 여부, cleanup 결과를 기록한다. Agent는 제공된 evidence를 읽고 Exit gate 충족 여부만 판단하며 Board action을 대신 실행하지 않는다.
+- Node가 `blocked`이고 미완료 `blockedBy`가 없으면 Operation Control은 같은 blocking episode에 Product Steward triage Task를 하나만 active tree 밖에 생성한다. 단순 sibling dependency 대기는 triage를 만들지 않는다.
+- triage는 확인된 Milestone, active Root/Node 상태와 제품 workspace를 바꾸지 않는다. 현재 Agent actor와 확인된 범위 안에서 해결 가능하면 안전한 resume 조건을 기록하고, human·actor·permission·범위 변경이 필요하면 중복 제거된 Backlog와 정확한 Board 요청을 남긴다.
+- active delivery가 blocked여도 read-only Routine은 중단하지 않는다. System Auditor와 Sweeper는 새 발견과 기존 Backlog를 조사할 수 있지만 `todo` 승격, active tree 편입과 구현은 새 Milestone 확인 전까지 하지 않는다.
+
 ## 실행 순서
 
 ```text

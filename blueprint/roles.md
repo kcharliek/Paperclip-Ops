@@ -41,6 +41,7 @@ Ops 시스템 자체를 제품으로 운영하는 Company는 선택형 `System A
 - Company가 `holding` 또는 `maintenance`이면 Maintenance owner가 아닌 Agent는 새 작업을 시작하지 않는다.
 - Maintenance는 단일 owner 제약을 수용한다. Maintainer가 사전 승인된 변경과 검증을 수행하고 정상 복귀 뒤 다른 Role이 review한다.
 - 모든 Agent는 주입된 자기 인증과 actor context만 사용한다. 401/403 뒤 인증을 제거하거나 local-trusted 무인증 Board 경로로 재시도해 인간 권한을 얻지 않는다.
+- delivery blocker는 Company 전체 정지를 뜻하지 않는다. 미완료 Task dependency가 없는 human·actor·permission blocker는 Product Steward가 active tree 밖에서 triage하고, System Auditor·Sweeper의 read-only Routine은 계속하되 확인되지 않은 구현으로 승격하지 않는다.
 - Agent 생성은 Board 승인 정책을 우회하지 않는다.
 - sandbox와 approval 우회는 신뢰된 로컬 환경에서 Company Profile이 명시한 경우에만 허용한다.
 

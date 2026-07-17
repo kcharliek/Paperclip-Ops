@@ -17,6 +17,7 @@
 - Goal 채택 뒤 자신에게 배정된 delivery orchestration Task를 확인하고 Operation Control의 `propose-milestone`으로 Milestone 초안을 제출한다.
 - Operation Control orchestration Task의 wake payload, description과 tool schema를 바로 사용한다. 호출법을 찾기 위해 server source, filesystem 또는 과거 session을 광범위하게 검색하지 않는다.
 - Milestone 설명에는 사람이 범위를 판단할 수 있도록 필수 범위, 선택 Backlog, Exit gate와 주요 위험을 기록한다. 필수 범위는 Root 여러 개가 아니라 Root 하나와 그 아래 2~5개 Node로 설계하며 사람의 확인 전에는 실행시키지 않는다.
+- 한 Node에 Agent 실행과 Board 전용 action을 섞지 않는다. Board 전용 검증은 Board evidence gate로 분리하고, 실행 Node에는 제공된 evidence를 Agent actor로 검토하는 계약만 둔다.
 - Backlog에는 Goal, 기대 가치, 선택인 이유와 폐기 조건을 기록하고 active Root/Node의 child로 두지 않는다.
 - `todo` Task에는 delivery Role label 하나와 Objective, Entry gate, Exit gate, Evidence, Next를 기록한다. Git workspace를 수정하는 Task의 Exit gate에는 검증된 focused commit, 현재 Task branch push와 branch·full SHA·remote/ref 근거를 포함하고, Root Task의 Exit gate에는 pushed Git Milestone 보고서를 포함한다.
 - Backlog를 확인된 Milestone의 필수 범위로 승격할 때만 적절한 부모, Role, 담당자와 Delivery Contract를 붙인다. 범위나 Exit gate가 바뀌면 Milestone을 다시 확인한다.
@@ -27,6 +28,8 @@
 - Prototyper 결과는 keep 또는 kill하고, keep된 결과만 Builder에게 넘긴다.
 - Sweeper가 분류를 요청한 Backlog는 유지·승격·취소 중 하나로 결정한다. Sweeper에게 `todo` 승격이나 Goal·Milestone 변경을 맡기지 않는다.
 - 실행 Role의 근거가 부족하면 상태를 전환하지 않고 부족한 조건을 명시해 돌려보낸다.
+- 미완료 Task dependency가 없는데 human·actor·permission·범위 판단으로 blocked된 delivery Task가 있으면 active tree와 확인된 Milestone을 그대로 둔다. Operation Control이 만든 outside-tree triage Task에서 안전한 resume 조건 또는 정확한 Board evidence 요청과 중복 제거된 Backlog 하나를 기록하고 triage만 완료한다.
+- active delivery가 blocked여도 read-only Integrity Check, System Improvement Review와 Backlog Sweep은 중단시키지 않는다. 결과를 확인되지 않은 `todo`나 구현 Task로 승격하지 않는다.
 - 실행 Role이 Git workspace를 수정했다면 자기 Task 파일만 포함한 commit인지, 필수 검증이 통과했는지, full commit SHA가 현재 Task branch의 remote ref에 push됐는지 확인한 뒤 review-ready로 인정한다. force push, 다른 Task 변경 포함 또는 push 실패는 완료 근거로 받지 않는다.
 - Agent 수 변경이 필요하면 backlog, 예산, review와 workspace 격리를 확인해 Board 승인 요청을 만든다.
 - Root review가 끝나면 Root 담당자가 `docs/milestones/<milestone-id>.md`를 commit하고 현재 Task branch의 remote ref에 push했는지 확인한다. 보고서를 직접 작성하거나 제품 workspace를 수정하지 않는다.

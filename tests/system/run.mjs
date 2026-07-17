@@ -389,6 +389,27 @@ async function run() {
     } catch (error) {
       boardAgentBoundary = String(error);
     }
+    const orchestrationBeforeRepair = await api(`/api/companies/${company.id}/issues?includePluginOperations=true&limit=100`);
+    const originalOrchestration = orchestrationBeforeRepair.find((issue) => (
+      issue.originKind === "plugin:local.operation-control:delivery-orchestration"
+      && issue.goalId === goal.id
+      && !["done", "cancelled"].includes(issue.status)
+    ));
+    if (!originalOrchestration) throw new Error("Controlled delivery did not create its initial orchestration Task");
+    await api(`/api/issues/${originalOrchestration.id}`, { method: "PATCH", body: { status: "done" } });
+    const repairResponse = await operationAction(plugin.id, company.id, "repair-delivery-orchestration");
+    const repairedOrchestration = repairResponse.data ?? repairResponse;
+    const rewakeResponse = await operationAction(plugin.id, company.id, "repair-delivery-orchestration");
+    const rewokenOrchestration = rewakeResponse.data ?? rewakeResponse;
+    const recoveredOrchestration = repairedOrchestration.issueId
+      ? await api(`/api/issues/${repairedOrchestration.issueId}`)
+      : null;
+    const orchestrationAfterRepair = await api(`/api/companies/${company.id}/issues?includePluginOperations=true&limit=100`);
+    const pendingOrchestration = orchestrationAfterRepair.filter((issue) => (
+      issue.originKind === "plugin:local.operation-control:delivery-orchestration"
+      && issue.goalId === goal.id
+      && !["done", "cancelled"].includes(issue.status)
+    ));
     scenario("operation-control", [
       check("Immediate stop reached maintenance", maintenance.state.mode === "maintenance", maintenance.state.mode, "maintenance"),
       check("Maintenance owner stayed available", maintenanceAgents[maintainer.id] !== "paused", maintenanceAgents[maintainer.id], "not paused"),
@@ -399,7 +420,19 @@ async function run() {
       check("Board adopted an existing company Goal", controlled.delivery?.state?.goalId === goal.id, controlled.delivery?.state?.goalId, goal.id),
       check("Adopted Goal entered the controlled phase", controlled.delivery?.state?.phase === "goal_registered", controlled.delivery?.state?.phase, "goal_registered"),
       check("Board cannot impersonate the Agent workflow step", boardAgentBoundary?.includes("requires an Agent actor"), boardAgentBoundary, "requires an Agent actor"),
-    ]);
+      check("Board repair recreated missing orchestration", repairedOrchestration.status === "created", repairedOrchestration.status, "created"),
+      check("Repeated Board repair re-woke the same Task", rewokenOrchestration.status === "woken" && rewokenOrchestration.issueId === repairedOrchestration.issueId, rewokenOrchestration, { status: "woken", issueId: repairedOrchestration.issueId }),
+      check("Recovered Task preserved delivery origin", recoveredOrchestration?.originKind === "plugin:local.operation-control:delivery-orchestration" && recoveredOrchestration?.originId?.includes(":repair:goal_registered:"), { originKind: recoveredOrchestration?.originKind, originId: recoveredOrchestration?.originId }, "delivery-orchestration repair origin"),
+      check("Recovered Task preserved Goal and Project linkage", recoveredOrchestration?.goalId === goal.id && recoveredOrchestration?.projectId === originalOrchestration.projectId, { goalId: recoveredOrchestration?.goalId, projectId: recoveredOrchestration?.projectId }, { goalId: goal.id, projectId: originalOrchestration.projectId }),
+      check("Recovery kept one pending orchestration Task", pendingOrchestration.length === 1 && pendingOrchestration[0].id === repairedOrchestration.issueId, pendingOrchestration.map((issue) => issue.id), [repairedOrchestration.issueId]),
+    ], {
+      boardEvidence: {
+        actorType: "board",
+        originalIssueId: originalOrchestration.id,
+        recoveredIssueId: repairedOrchestration.issueId,
+        phase: "goal_registered",
+      },
+    });
 
     if (includeLlm) {
       await api(`/api/agents/${builder.id}/resume`, { method: "POST" });

@@ -83,6 +83,9 @@ Sweeper는 모든 단계에서 개입할 수 있다.
 - Board 전용 action, Company·Agent 관리와 사람 confirmation은 인증된 인간이 직접 수행한다. Agent가 같은 host의 unauthenticated API, 저장된 Board credential 또는 테스트 helper로 인간 actor를 대신하지 않는다.
 - Board actor가 필요한 disposable system test는 Board가 실행해 evidence를 제공하거나, Agent actor를 유지하는 제한된 harness를 별도 설계한다. Agent에게 Board credential을 주입해 테스트를 통과시키지 않는다.
 - evidence에는 사용한 actor type과 권한 경계를 기록한다. actor 경계를 바꾸어야만 Exit gate를 충족할 수 있으면 결과를 만들지 않고 Milestone 범위·설계 판단을 요청한다.
+- 한 Exit gate에 Agent 실행과 Board 전용 action을 섞지 않는다. Board 전용 검증은 Board가 일회용 환경에서 실행해 actor type, 대상 ID, before/after, 중복 여부와 cleanup을 comment 또는 document로 남기고, Agent Node는 그 evidence의 계약 충족 여부만 독립 확인한다.
+- Agent Node가 human·actor·permission·범위 판단으로 blocked이고 미완료 Task dependency가 없으면 해당 Node는 blocked로 유지한다. Operation Control은 active tree 밖에 Product Steward triage Task를 한 episode당 하나만 만들며, triage는 제품 workspace와 확인된 Milestone을 바꾸지 않는다.
+- blocked delivery 중에도 read-only Integrity Check, System Improvement Review와 Backlog Sweep은 계속할 수 있다. 발견은 active tree로 자동 승격하지 않고 중복 제거된 Backlog 또는 정확한 Board evidence 요청으로만 남긴다.
 
 ## Git 전달
 

@@ -31,11 +31,13 @@
 
 같은 날 Ops Steward, System Auditor, Builder, Sweeper와 Maintainer의 live instructions에 actor·인증 경계를 추가했다. Agent는 Paperclip이 주입한 자기 bearer, API key와 run context만 사용하고 401/403을 권한 blocker로 보고한다. 인증 header를 제거·교체하거나 local-trusted의 무인증 Board 경로로 인간 actor를 대신하지 않는다. 적용 뒤 다섯 managed `AGENTS.md`와 이 저장소의 current snapshot이 byte-for-byte 일치함을 다시 확인했다.
 
+Operation Control 0.6.3과 같은 다섯 live instructions에는 blocked-work fallback도 적용했다. 미완료 Task dependency가 없는 controlled `blocked` Task는 active tree와 Milestone을 바꾸지 않고 outside-tree Product Steward triage를 blocking episode당 하나만 만들며, 단순 sibling dependency 대기는 만들지 않는다. blocked delivery 중 read-only Integrity, Improvement Review와 Backlog Sweep은 계속할 수 있다.
+
 ## 분류와 운영
 
 - 개선 분류 label: `blueprint`, `plugin`, `local-profile`, `paperclip-gap`, `maintenance`
 - delivery label: `role:system-auditor`, `role:builder`, `role:sweeper`, `role:maintainer`
-- Operation Control: instance `979f4503-0512-4747-b3de-5c098ee3ece1`, version `0.6.2`, `normal`, `drain`, 시간당 20 run, `executing`
+- Operation Control: instance `979f4503-0512-4747-b3de-5c098ee3ece1`, version `0.6.3`, ready/healthy, `normal`, `drain`, 시간당 20 run, `executing`
 - 현재 run window: 4/20. `PAP-19` fresh-session 성공, `PAP-20` 자동 인계 뒤 안전 취소와 live instruction 적용 후의 재개 안전 취소가 포함된다.
 - System Improvement Review: `da9b24ae-29f9-445f-a6e4-642ab4fb2bc5`, System Auditor, 매주 월요일 10:00 KST, 다음 2026-07-20 10:00 KST, `skip_if_active` / `skip_missed`
 - Company Integrity Check: `24f95458-8bee-4260-94f3-04ed8e638dfa`, Maintainer, 6시간마다, 다음 2026-07-17 18:00 KST, `skip_if_active` / `skip_missed`
@@ -72,6 +74,6 @@ Board가 `PAP-19`의 task session을 reset하고 Builder를 재개하자 run `30
 
 - `plugins/operation-control`: `npm test` → `operation-control: ok`
 - `node tests/system/run.mjs --preflight` → plugin ready, 모든 Role instruction의 actor 경계 확인
-- `node tests/system/run.mjs` → maintenance 전이, 수동 pause 보존, Goal adopt와 Board/Agent actor 경계 모두 pass
+- `node tests/system/run.mjs` → maintenance 전이, 수동 pause 보존, Goal adopt, Board/Agent actor 경계, Board 복구의 생성→동일 Task re-wake와 단일 pending 계약 모두 pass
 
-마지막 system test의 disposable Company `5c40a45d-a46a-494f-a4bc-11b376d90e9e`는 성공 뒤 archive됐고 test fixture는 남지 않았다.
+마지막 system test의 disposable Company `6ed3cd26-c6e3-4c89-9f7b-14ecc99eb133`는 성공 뒤 archive됐다. Board actor evidence는 원본 orchestration Task `e8be51a8-7e03-4b45-b2ae-4e3edb156290`, 복구 Task `15342ad1-bd96-4d73-a2bb-f7f8fdc9a17d`, phase `goal_registered`, 반복 호출 `woken`, pending 1건이며 test fixture는 남지 않았다.
